@@ -308,6 +308,13 @@ test('the desktop header credits the author and links the repo', async () => {
   ok(doc.querySelector('.credit').offsetParent !== null, 'visible on desktop');
 });
 
+test('the mobile landing screen credits the author, desktop leaves it to the header', async () => {
+  const { doc } = await freshAppAt(430);
+  ok(doc.getElementById('creditLanding').offsetParent !== null, 'visible on mobile landing');
+  const { doc: d2 } = await freshApp();
+  ok(d2.getElementById('creditLanding').offsetParent === null, 'hidden on desktop landing');
+});
+
 test('on mobile the credit hides behind the info toggle', async () => {
   const { doc } = await freshAppAt(430, await photo(400, 600, 'a.jpg'));
   const vis = (el) => el.offsetParent !== null;

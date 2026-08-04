@@ -74,6 +74,9 @@
   .credit a:hover { color: var(--amber); }
   .credit a:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
   #creditChip { display: none; }
+  #creditLanding { display: none; }
+  .empty .pitch a { color: var(--muted); text-decoration: underline dotted; }
+  .empty .pitch a:hover { color: var(--amber); }
 
   main { flex: 1 1 auto; display: flex; min-height: 0; }
 
@@ -396,6 +399,7 @@
       color: var(--muted);
     }
     .table.show-info #creditChip { display: block; }
+    #creditLanding { display: block; }
     #creditChip a { color: var(--muted); text-decoration: underline dotted; }
     body.has-images #infoToggle { display: block; }
     aside > [data-tab] { display: none; }
@@ -582,6 +586,7 @@
       </div>
       <p class="pitch">🤍 white borders for instagram, stories and tiktok, at full resolution</p>
       <p class="pitch">🔒 your photos never leave your device, everything runs in your browser</p>
+      <p class="pitch" id="creditLanding">made by <a href="https://github.com/sergiopaniego" rel="noopener">sergio paniego</a>, <a href="https://github.com/sergiopaniego/brink" rel="noopener">source</a></p>
     </div>
   </div>
 </main>
