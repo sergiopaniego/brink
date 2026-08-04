@@ -260,8 +260,21 @@
     body { min-height: 100dvh; }
     main { display: contents; }          /* lets body order: table, filmstrip, controls */
     header { order: 0; padding: 12px 16px; }
-    .table { order: 1; flex: none; height: 52dvh; min-height: 320px; padding: 14px 16px; gap: 10px; }
-    footer { order: 2; padding: 10px 16px; border-top: none; }
+    .table {
+      order: 1; flex: none;
+      position: sticky; top: 0; z-index: 4;
+      background: var(--ink);
+      height: 40dvh;
+      padding: 10px 16px; gap: 8px;
+    }
+    footer {
+      order: 2;
+      position: sticky; top: 40dvh; z-index: 4;
+      background: var(--ink);
+      padding: 8px 16px;
+      border-top: none;
+      border-bottom: 1px solid var(--panel-edge);
+    }
     aside {
       order: 3;
       flex: none;
@@ -860,29 +873,50 @@ preview.addEventListener('dblclick', () => {
       (state.workspace === 'singles' && state.fit === 'fill')) resetFraming();
 });
 
-let drag = null;
+const pointers = new Map();
+
+function pinchDist() {
+  const [a, b] = [...pointers.values()];
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
 preview.addEventListener('pointerdown', (e) => {
   if (!state.images.length) return;
   if (state.workspace === 'collage') {
-    const c = computeCollage();
-    const rect = preview.getBoundingClientRect();
-    const k = c.W / rect.width;
-    const px = (e.clientX - rect.left) * k, py = (e.clientY - rect.top) * k;
-    const hit = c.rects.findIndex(([x, y, w, h]) =>
-      px >= x && px <= x + w && py >= y && py <= y + h);
-    if (hit >= 0 && hit !== state.slot) { state.slot = hit; syncFramingUI(); renderPreview(); }
-    drag = { x: e.clientX, y: e.clientY };
-    try { preview.setPointerCapture(e.pointerId); } catch {}
-    preview.style.cursor = 'grabbing';
+    if (!pointers.size) {                         // only the first touch picks a cell
+      const c = computeCollage();
+      const rect = preview.getBoundingClientRect();
+      const k = c.W / rect.width;
+      const px = (e.clientX - rect.left) * k, py = (e.clientY - rect.top) * k;
+      const hit = c.rects.findIndex(([x, y, w, h]) =>
+        px >= x && px <= x + w && py >= y && py <= y + h);
+      if (hit >= 0 && hit !== state.slot) { state.slot = hit; syncFramingUI(); renderPreview(); }
+    }
+  } else if (state.fit !== 'fill') {
     return;
   }
-  if (state.fit !== 'fill' || !state.images[state.current]) return;
-  drag = { x: e.clientX, y: e.clientY };
-  preview.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  try { preview.setPointerCapture(e.pointerId); } catch {}
   preview.style.cursor = 'grabbing';
 });
+
 preview.addEventListener('pointermove', (e) => {
-  if (!drag) return;
+  const p = pointers.get(e.pointerId);
+  if (!p) return;
+  if (pointers.size === 2) {                      // pinch zooms the active photo
+    const before = pinchDist();
+    p.x = e.clientX; p.y = e.clientY;
+    const after = pinchDist();
+    const adj = activeAdj();
+    if (adj && before > 0) {
+      adj.zoom = clamp(adj.zoom * (after / before), 1, 3);
+      syncFramingUI();
+      renderPreview();
+    }
+    return;
+  }
+  const dx = e.clientX - p.x, dy = e.clientY - p.y;
+  p.x = e.clientX; p.y = e.clientY;
   if (state.workspace === 'collage') {
     const img = state.slotMap[state.slot];
     if (!img) return;
@@ -890,28 +924,27 @@ preview.addEventListener('pointermove', (e) => {
     const [, , rw, rh] = c.rects[state.slot];
     const l = slotLayout(img, rw, rh, img.cadj);
     const toSource = (l.sw / rw) * (c.W / preview.getBoundingClientRect().width);
-    img.cadj.dx -= (e.clientX - drag.x) * toSource;
-    img.cadj.dy -= (e.clientY - drag.y) * toSource;
-    drag = { x: e.clientX, y: e.clientY };
-    renderPreview();
-    return;
+    img.cadj.dx -= dx * toSource;
+    img.cadj.dy -= dy * toSource;
+  } else {
+    const img = state.images[state.current];
+    if (!img) return;
+    const l = layoutFor(img);
+    const pxPerCanvas = preview.getBoundingClientRect().width / l.cw;
+    const toSource = (l.sw / l.dw) / pxPerCanvas;  // screen px -> source px
+    img.adj.dx -= dx * toSource;
+    img.adj.dy -= dy * toSource;
   }
-  const img = state.images[state.current];
-  if (!img) return;
-  const l = layoutFor(img);
-  const pxPerCanvas = preview.getBoundingClientRect().width / l.cw;
-  const toSource = (l.sw / l.dw) / pxPerCanvas;   // screen px -> source px
-  img.adj.dx -= (e.clientX - drag.x) * toSource;
-  img.adj.dy -= (e.clientY - drag.y) * toSource;
-  drag = { x: e.clientX, y: e.clientY };
   renderPreview();
 });
+
 ['pointerup', 'pointercancel'].forEach((ev) =>
-  preview.addEventListener(ev, () => {
-    drag = null;
-    preview.style.cursor =
-      state.workspace === 'collage' ? 'grab'
-      : state.workspace === 'singles' && state.fit === 'fill' ? 'grab' : 'default';
+  preview.addEventListener(ev, (e) => {
+    pointers.delete(e.pointerId);
+    if (!pointers.size)
+      preview.style.cursor =
+        state.workspace === 'collage' ? 'grab'
+        : state.fit === 'fill' ? 'grab' : 'default';
   }));
 
 $('borderPct').addEventListener('input', (e) => {
