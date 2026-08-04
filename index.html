@@ -62,6 +62,18 @@
     letter-spacing: 0.02em;
     color: var(--paper);
   }
+  .credit {
+    margin-left: auto;
+    font: 12px var(--mono);
+    color: var(--muted);
+  }
+  .credit a {
+    color: var(--muted);
+    text-decoration: underline dotted;
+  }
+  .credit a:hover { color: var(--amber); }
+  .credit a:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+  #creditChip { display: none; }
 
   main { flex: 1 1 auto; display: flex; min-height: 0; }
 
@@ -372,6 +384,19 @@
       letter-spacing: 0.03em;
     }
     .table.show-info .readout { display: block; }
+    #creditChip {
+      position: absolute;
+      top: 44px; left: 12px;
+      z-index: 3;
+      background: var(--panel);
+      border: 1px solid var(--panel-edge);
+      border-radius: 7px;
+      padding: 5px 10px;
+      font: 11px var(--mono);
+      color: var(--muted);
+    }
+    .table.show-info #creditChip { display: block; }
+    #creditChip a { color: var(--muted); text-decoration: underline dotted; }
     body.has-images #infoToggle { display: block; }
     aside > [data-tab] { display: none; }
     aside[data-tool="format"] > [data-tab="format"],
@@ -447,6 +472,7 @@
 
 <header>
   <h1>brink</h1>
+  <p class="credit">made by <a href="https://github.com/sergiopaniego" rel="noopener">sergio paniego</a>, <a href="https://github.com/sergiopaniego/brink" rel="noopener">source</a></p>
 </header>
 
 <main>
@@ -547,6 +573,7 @@
     <button id="infoToggle" aria-label="output size details" aria-pressed="false">i</button>
     <button id="bgToggle" aria-label="preview on a light background"></button>
     <div class="readout" id="readout"></div>
+    <p id="creditChip">made by <a href="https://github.com/sergiopaniego" rel="noopener">sergio paniego</a>, <a href="https://github.com/sergiopaniego/brink" rel="noopener">source</a></p>
     <canvas id="preview"></canvas>
     <div class="empty" id="empty">
       <div class="drop" id="drop" tabindex="0" role="button" aria-label="Add photos">

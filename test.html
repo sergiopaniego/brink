@@ -64,8 +64,9 @@ async function photo(w, h, name) {
 }
 
 let frames = [];
-async function freshApp(...photos) {
+async function freshAppAt(width, ...photos) {
   const frame = document.createElement('iframe');
+  frame.style.width = width + 'px';
   document.body.appendChild(frame);
   frames.push(frame);
   await new Promise((res, rej) => { frame.onload = res; frame.onerror = rej; frame.src = 'index.html'; });
@@ -73,6 +74,7 @@ async function freshApp(...photos) {
   if (photos.length) await win.addFiles(photos);
   return { win, doc: frame.contentDocument, B: win.brink };
 }
+const freshApp = (...photos) => freshAppAt(1200, ...photos);
 
 function pev(win, el, type, id, x, y) {
   el.dispatchEvent(new win.PointerEvent(type, {
@@ -296,6 +298,24 @@ test('removing a collage photo empties its cell', async () => {
   const names = B.state.slotMap.map((s) => (s ? s.name : null));
   eq(names.join(','), 'a.jpg,', 'cell emptied, not reshuffled');
   eq(B.state.images.length, 2, 'photo gone from the strip');
+});
+
+test('the desktop header credits the author and links the repo', async () => {
+  const { doc } = await freshApp();
+  const links = [...doc.querySelectorAll('.credit a')].map((a) => a.href);
+  ok(links.includes('https://github.com/sergiopaniego'), 'author link');
+  ok(links.includes('https://github.com/sergiopaniego/brink'), 'repo link');
+  ok(doc.querySelector('.credit').offsetParent !== null, 'visible on desktop');
+});
+
+test('on mobile the credit hides behind the info toggle', async () => {
+  const { doc } = await freshAppAt(430, await photo(400, 600, 'a.jpg'));
+  const vis = (el) => el.offsetParent !== null;
+  ok(!vis(doc.querySelector('header')), 'no header on mobile');
+  ok(!vis(doc.getElementById('creditChip')), 'credit hidden by default');
+  doc.getElementById('infoToggle').click();
+  ok(vis(doc.getElementById('creditChip')), 'credit shows with the info chip');
+  ok(vis(doc.getElementById('readout')), 'size info shows too');
 });
 
 /* ---------- interface state ---------- */
