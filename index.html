@@ -254,37 +254,32 @@
   }
   .thumb-add:hover, .thumb-add:focus-visible { border-color: var(--amber); color: var(--amber); outline: none; }
 
-  /* ---------- mobile: preview first, thumb-friendly controls ---------- */
+  /* ---------- mobile: photo first, one tool at a time ---------- */
+  #toolbar { display: none; }
   @media (max-width: 760px) {
-    html, body { height: auto; }
-    body { min-height: 100dvh; }
-    main { display: contents; }          /* lets body order: table, filmstrip, controls */
-    header { order: 0; padding: 12px 16px; }
-    .table {
-      order: 1; flex: none;
-      position: sticky; top: 0; z-index: 4;
-      background: var(--ink);
-      height: 40dvh;
-      padding: 10px 16px; gap: 8px;
-    }
-    footer {
-      order: 2;
-      position: sticky; top: 40dvh; z-index: 4;
-      background: var(--ink);
-      padding: 8px 16px;
-      border-top: none;
-      border-bottom: 1px solid var(--panel-edge);
-    }
+    body { height: 100dvh; }
+    main { display: contents; }          /* body ordering: table, filmstrip, panel, toolbar */
+    header { order: 0; padding: 10px 16px; }
+    .table { order: 1; flex: 1 1 auto; min-height: 0; padding: 10px 12px; gap: 6px; }
+    footer { order: 2; flex: none; padding: 6px 12px; border-top: none; }
     aside {
       order: 3;
       flex: none;
       width: 100%;
       border-right: none;
       border-top: 1px solid var(--panel-edge);
-      padding: 18px 16px calc(84px + env(safe-area-inset-bottom));
-      gap: 22px;
+      padding: 14px 16px;
+      gap: 14px;
       overflow: visible;
     }
+    aside > [data-tab] { display: none; }
+    aside[data-tool="format"] > [data-tab="format"],
+    aside[data-tool="border"] > [data-tab="border"],
+    aside[data-tool="frame"]  > [data-tab="frame"],
+    aside[data-tool="color"]  > [data-tab="color"],
+    aside[data-tool="save"]   > section[data-tab="save"] { display: block; }
+    aside[data-tool="save"]   > .actions { display: flex; flex-direction: row; margin: 12px 0 0; }
+    .group-label { display: none; }
     .modes { flex-direction: row; flex-wrap: wrap; gap: 6px; }
     .modes label {
       border: 1px solid var(--panel-edge);
@@ -297,20 +292,32 @@
     .align-grid { grid-template-columns: repeat(3, 42px); gap: 6px; }
     .align-grid button { width: 42px; height: 42px; }
     .format-row button { padding: 10px 0; }
-    .thumb { height: 64px; }
-    .thumb-add { width: 64px; height: 64px; }
-    .actions {
-      position: fixed;
-      left: 0; right: 0; bottom: 0;
-      z-index: 5;
-      flex-direction: row;
-      margin: 0;
-      padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    .reset-btn { margin-top: 12px; }
+    .btn { flex: 1; padding: 12px; }
+    .drop { padding: 40px 24px; }
+
+    #toolbar {
+      order: 4;
+      display: flex;
+      flex: none;
+      gap: 6px;
+      padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
       background: var(--panel);
       border-top: 1px solid var(--panel-edge);
     }
-    .btn { flex: 1; padding: 13px 12px; }
-    .drop { padding: 48px 28px; }
+    #toolbar button {
+      flex: 1;
+      padding: 10px 0;
+      font: 12px var(--mono);
+      color: var(--muted);
+      background: none;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      cursor: pointer;
+    }
+    #toolbar button[aria-pressed="true"] { color: var(--amber); border-color: rgba(224,164,88,0.5); }
+    #toolbar button[data-tool="save"] { background: var(--paper); color: #17191c; font: 600 13px var(--sans); }
+    #toolbar button:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
   }
   @media (prefers-reduced-motion: no-preference) {
     #preview, .drop { transition: border-color 0.15s, background 0.15s; }
@@ -325,7 +332,7 @@
 
 <main>
   <aside>
-    <section id="wsSection" hidden>
+    <section id="wsSection" data-tab="format" hidden>
       <div class="format-row">
         <button id="wsSingles" aria-pressed="true">singles</button>
         <button id="wsCollage" aria-pressed="false">collage</button>
@@ -333,7 +340,7 @@
       <p class="format-note" id="wsNote" hidden>tap a cell, then a thumbnail to fill it.</p>
     </section>
 
-    <section id="tplSection" hidden>
+    <section id="tplSection" data-tab="format" hidden>
       <div class="group-label">Template</div>
       <div class="format-row" id="tplRow">
         <button data-tpl="2h" aria-pressed="true">2×1</button>
@@ -343,7 +350,7 @@
       </div>
     </section>
 
-    <section>
+    <section data-tab="format">
       <div class="group-label">Format</div>
       <div class="modes" role="radiogroup" aria-label="Output format">
         <label><input type="radio" name="mode" value="post" checked>
@@ -363,7 +370,7 @@
       </div>
     </section>
 
-    <section>
+    <section data-tab="border">
       <div class="group-label">Border</div>
       <div class="slider-row">
         <input type="range" id="borderPct" min="0" max="10" step="0.25" value="2" aria-label="Border size, percent of long side">
@@ -371,7 +378,7 @@
       </div>
     </section>
 
-    <section>
+    <section data-tab="frame">
       <div class="group-label" id="framingLabel">Position</div>
       <div class="align-grid" role="group" aria-label="Photo position on the canvas" id="alignGrid">
         <button data-h="left"   data-v="top"    aria-label="Top left"></button>
@@ -391,7 +398,7 @@
       <button class="reset-btn" id="resetFraming" hidden>reset</button>
     </section>
 
-    <section>
+    <section data-tab="color">
       <div class="group-label">Color</div>
       <div class="swatches">
         <button class="swatch" data-color="#ffffff" style="background:#ffffff" aria-label="White" aria-pressed="true"></button>
@@ -401,7 +408,7 @@
       </div>
     </section>
 
-    <section>
+    <section data-tab="save">
       <div class="group-label">Export</div>
       <div class="format-row">
         <button id="fmtJpeg" aria-pressed="true">JPEG</button>
@@ -409,7 +416,7 @@
       </div>
     </section>
 
-    <div class="actions">
+    <div class="actions" data-tab="save">
       <button class="btn" id="download" disabled>save image</button>
       <button class="btn secondary" id="downloadAll" disabled>save all</button>
     </div>
@@ -426,6 +433,14 @@
 </main>
 
 <footer id="strip"></footer>
+
+<nav id="toolbar" aria-label="Tools">
+  <button data-tool="format" aria-pressed="true">format</button>
+  <button data-tool="border" aria-pressed="false">border</button>
+  <button data-tool="frame" aria-pressed="false">frame</button>
+  <button data-tool="color" aria-pressed="false">color</button>
+  <button data-tool="save" aria-pressed="false">save</button>
+</nav>
 
 <input type="file" id="fileInput" accept="image/*" multiple hidden>
 
@@ -787,6 +802,16 @@ function renderStrip() {
 /* ---------- controls ---------- */
 document.querySelectorAll('input[name="mode"]').forEach((r) =>
   r.addEventListener('change', () => { state.mode = r.value; renderPreview(); }));
+
+/* ---------- mobile toolbar: one tool panel at a time ---------- */
+function setTool(tool) {
+  document.querySelector('aside').dataset.tool = tool;
+  document.querySelectorAll('#toolbar button').forEach((b) =>
+    b.setAttribute('aria-pressed', b.dataset.tool === tool));
+}
+document.querySelectorAll('#toolbar button').forEach((b) =>
+  b.addEventListener('click', () => setTool(b.dataset.tool)));
+setTool('format');
 
 /* ---------- workspace ---------- */
 function updateControlStates() {
