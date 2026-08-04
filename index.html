@@ -694,8 +694,24 @@ function layoutFor(img) {
   const y = state.alignV === 'top' ? m
           : state.alignV === 'bottom' ? ch - ih - m
           : Math.round((ch - ih) / 2);
-  return { cw, ch, x, y, sx: 0, sy: 0, sw: iw, sh: ih, dw: iw, dh: ih,
-           m, z: 1, rot: 0, f: 1, ucx: 0, ucy: 0, trimW: 0, trimH: 0 };
+  // zoom and rotation crop inside the photo footprint, the window never moves
+  const z = img.adj.zoom;
+  const rot = img.adj.rot || 0;
+  const rad = rot * Math.PI / 180;
+  const ac = Math.abs(Math.cos(rad)), as = Math.abs(Math.sin(rad));
+  const k = rot ? Math.max((iw * ac + ih * as) / iw, (iw * as + ih * ac) / ih) : 1;
+  const f = z * k;
+  const sw = iw / f, sh = ih / f;
+  const hx = (iw * ac + ih * as) / (2 * f), hy = (iw * as + ih * ac) / (2 * f);
+  const cx = clamp(iw / 2 + img.adj.dx, hx, Math.max(hx, iw - hx));
+  const cy = clamp(ih / 2 + img.adj.dy, hy, Math.max(hy, ih - hy));
+  if (z !== 1 || rot) {                       // keep fill panning intact at rest
+    img.adj.dx = cx - iw / 2;
+    img.adj.dy = cy - ih / 2;
+  }
+  return { cw, ch, x, y, sx: cx - sw / 2, sy: cy - sh / 2, sw, sh, dw: iw, dh: ih,
+           m, z, rot, f, ucx: cx, ucy: cy,
+           trimW: Math.round(iw - sw), trimH: Math.round(ih - sh) };
 }
 
 function drawComposition(ctx, bitmap, l, scale) {
@@ -865,7 +881,7 @@ function renderSinglePreview() {
   preview.width = Math.round(l.cw * scale);
   preview.height = Math.round(l.ch * scale);
   drawComposition(pctx, img.bitmap, l, scale);
-  preview.style.cursor = state.fit === 'fill' ? 'grab' : 'default';
+  preview.style.cursor = 'grab';
 
   const trim = l.trimW > 0 ? `, trims ${l.trimW} px width`
              : l.trimH > 0 ? `, trims ${l.trimH} px height` : '';
@@ -877,13 +893,29 @@ function renderSinglePreview() {
 }
 
 /* ---------- export ---------- */
+// full size first; if the device rejects the canvas (ios caps canvas area),
+// retry smaller and say so instead of failing silently
+async function renderBlob(draw, w, h, type) {
+  for (const scale of [1, 0.82, 0.66, 0.5, 0.4]) {
+    try {
+      const c = document.createElement('canvas');
+      c.width = Math.round(w * scale);
+      c.height = Math.round(h * scale);
+      draw(c.getContext('2d'), scale);
+      const blob = await new Promise((r) => c.toBlob(r, type, 0.97));
+      if (blob) {
+        if (scale < 1) notice(`this device limits canvas size, saved at ${Math.round(scale * 100)}%`);
+        return blob;
+      }
+    } catch {}
+  }
+  throw new Error('canvas export failed');
+}
+
 function exportBlob(img) {
   const l = layoutFor(img);
-  const c = document.createElement('canvas');
-  c.width = l.cw; c.height = l.ch;
-  drawComposition(c.getContext('2d'), img.bitmap, l, 1);
   const type = state.format === 'png' ? 'image/png' : 'image/jpeg';
-  return new Promise((res) => c.toBlob(res, type, 0.97));
+  return renderBlob((ctx, scale) => drawComposition(ctx, img.bitmap, l, scale), l.cw, l.ch, type);
 }
 
 function outName(img) {
@@ -907,16 +939,15 @@ async function exportFile(img) {
 
 async function collageFile() {
   const c = computeCollage();
-  const canvas = document.createElement('canvas');
-  canvas.width = c.W; canvas.height = c.H;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = state.color;
-  ctx.fillRect(0, 0, c.W, c.H);
-  drawCollagePhotos(ctx, c);
   const type = state.format === 'png' ? 'image/png' : 'image/jpeg';
   const ext = state.format === 'png' ? 'png' : 'jpg';
   const base = (c.imgs.find(Boolean)?.name ?? 'collage').replace(/\.[^.]+$/, '');
-  const blob = await new Promise((r) => canvas.toBlob(r, type, 0.97));
+  const blob = await renderBlob((ctx, scale) => {
+    ctx.scale(scale, scale);
+    ctx.fillStyle = state.color;
+    ctx.fillRect(0, 0, c.W, c.H);
+    drawCollagePhotos(ctx, c);
+  }, c.W, c.H, type);
   return new File([blob], `${base}-collage-${MODES[state.mode].suffix}.${ext}`, { type });
 }
 
@@ -1145,15 +1176,14 @@ setTool('none');
 /* ---------- workspace ---------- */
 function updateControlStates() {
   const single = state.workspace === 'singles';
-  const framing = !single || state.fit === 'fill';   // zoom applies in collage and singles-Fill
   $('fitRow').hidden = !single;
   $('modeOriginal').hidden = !single;
   $('tplSection').hidden = single;
   $('alignGrid').hidden = !single;
-  $('zoomRow').hidden = !framing;
-  $('rotRow').hidden = !framing;
-  $('resetFraming').hidden = !framing;
-  $('framingLabel').textContent = single ? 'position' : 'zoom';
+  $('zoomRow').hidden = false;
+  $('rotRow').hidden = false;
+  $('resetFraming').hidden = false;
+  $('framingLabel').textContent = single ? 'position' : 'frame';
   document.querySelectorAll('#tplRow button').forEach((b) =>
     b.setAttribute('aria-pressed', b.dataset.tpl === state.template));
   $('downloadAll').hidden = !single || state.images.length < 2;
@@ -1235,10 +1265,7 @@ function resetFraming() {
   renderPreview();
 }
 $('resetFraming').addEventListener('click', resetFraming);
-preview.addEventListener('dblclick', () => {
-  if (state.workspace === 'collage' ||
-      (state.workspace === 'singles' && state.fit === 'fill')) resetFraming();
-});
+preview.addEventListener('dblclick', resetFraming);
 
 const pointers = new Map();
 let twist = null;   // { angle0, rot0, engaged }
@@ -1265,8 +1292,6 @@ preview.addEventListener('pointerdown', (e) => {
         px >= x && px <= x + w && py >= y && py <= y + h);
       if (hit >= 0 && hit !== state.slot) { state.slot = hit; syncFramingUI(); renderPreview(); }
     }
-  } else if (state.fit !== 'fill') {
-    return;
   }
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pointers.size === 2) {
@@ -1334,10 +1359,7 @@ preview.addEventListener('pointermove', (e) => {
   preview.addEventListener(ev, (e) => {
     pointers.delete(e.pointerId);
     if (pointers.size < 2) twist = null;
-    if (!pointers.size)
-      preview.style.cursor =
-        state.workspace === 'collage' ? 'grab'
-        : state.fit === 'fill' ? 'grab' : 'default';
+    if (!pointers.size) preview.style.cursor = 'grab';
   }));
 
 $('borderPct').addEventListener('input', (e) => {

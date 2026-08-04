@@ -232,6 +232,25 @@ test('two finger twist rotates, plain pinch stays straight', async () => {
   pev(win, pv, 'pointerup', 2, cx + 60, cy);
 });
 
+test('fit keeps the photo footprint while zoom and rotation crop inside it', async () => {
+  const { win, B } = await freshApp(await photo(800, 1200, 'a.jpg'));
+  const img = B.state.images[0];
+  const flat = win.layoutFor(img);
+  img.adj.zoom = 2;
+  let l = win.layoutFor(img);
+  eq(l.cw, flat.cw, 'canvas unchanged');
+  eq(l.dw, flat.dw, 'photo window unchanged');
+  close(l.sw, 400, 1, 'zoom halves the visible source');
+  ok(l.trimW > 0, 'crop reported');
+  img.adj.rot = 45;
+  l = win.layoutFor(img);
+  eq(l.dw, flat.dw, 'rotation keeps the footprint');
+  ok(l.f > 2, 'rotation scales up inside the window');
+  win.resetFraming();
+  l = win.layoutFor(img);
+  close(l.sw, 800, 0.01, 'reset restores the full photo');
+});
+
 /* ---------- export ---------- */
 
 test('exports match the computed size, format and filename', async () => {
