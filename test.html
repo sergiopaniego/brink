@@ -112,7 +112,7 @@ test('unreadable files are reported, good ones still load', async () => {
 test('fit hits every ratio exactly and never rescales the photo', async () => {
   const { win, B } = await freshApp(await photo(800, 1200, 'a.jpg'));
   const img = B.state.images[0];
-  for (const [mode, ratio] of [['post', 4 / 5], ['square', 1], ['wide', 1.91], ['story', 9 / 16]]) {
+  for (const [mode, ratio] of [['post', 4 / 5], ['grid', 3 / 4], ['square', 1], ['wide', 1.91], ['story', 9 / 16]]) {
     B.state.mode = mode;
     const l = win.layoutFor(img);
     close(l.cw / l.ch, ratio, 0.002, `${mode} ratio`);

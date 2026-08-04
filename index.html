@@ -474,6 +474,8 @@
       <div class="modes" role="radiogroup" aria-label="Output format">
         <label><input type="radio" name="mode" value="post" checked>
           <span class="name">post</span><span class="ratio">4:5</span></label>
+        <label><input type="radio" name="mode" value="grid">
+          <span class="name">grid</span><span class="ratio">3:4</span></label>
         <label><input type="radio" name="mode" value="square">
           <span class="name">square</span><span class="ratio">1:1</span></label>
         <label><input type="radio" name="mode" value="wide">
@@ -574,6 +576,7 @@
 
 const MODES = {
   post:     { ratio: 4 / 5,    suffix: '4x5' },
+  grid:     { ratio: 3 / 4,    suffix: '3x4' },
   square:   { ratio: 1,        suffix: '1x1' },
   wide:     { ratio: 1.91,     suffix: 'wide' },
   story:    { ratio: 9 / 16,   suffix: 'story' },
