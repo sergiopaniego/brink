@@ -272,6 +272,16 @@
       gap: 14px;
       overflow: visible;
     }
+    aside[data-tool="none"] { display: none; }
+    body.has-images header { display: none; }
+    .readout {
+      font-size: 11px;
+      letter-spacing: 0.03em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
     aside > [data-tab] { display: none; }
     aside[data-tool="format"] > [data-tab="format"],
     aside[data-tool="border"] > [data-tab="border"],
@@ -733,6 +743,7 @@ async function addFiles(fileList) {
   }
   if (state.images.length) {
     state.current = state.images.length - 1;
+    document.body.classList.add('has-images');
     $('drop').style.display = 'none';
     preview.style.display = 'block';
     $('download').disabled = false;
@@ -805,7 +816,9 @@ document.querySelectorAll('input[name="mode"]').forEach((r) =>
 
 /* ---------- mobile toolbar: one tool panel at a time ---------- */
 function setTool(tool) {
-  document.querySelector('aside').dataset.tool = tool;
+  const panel = document.querySelector('aside');
+  if (panel.dataset.tool === tool) tool = 'none';   // tap the active tool: collapse
+  panel.dataset.tool = tool;
   document.querySelectorAll('#toolbar button').forEach((b) =>
     b.setAttribute('aria-pressed', b.dataset.tool === tool));
 }
