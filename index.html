@@ -3,12 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>brink</title>
+<title>brink, white borders for instagram photos</title>
 <meta name="description" content="add clean borders to your photos for instagram, stories and tiktok. runs in your browser, photos never leave your device.">
 <meta property="og:title" content="brink">
+<meta property="og:url" content="https://sergiopaniego.github.io/brink/">
 <meta property="og:description" content="clean borders for your photos, in the browser">
-<meta property="og:image" content="https://sergiopaniego.github.io/brink/screenshot.jpg">
+<meta property="og:image" content="https://sergiopaniego.github.io/brink/og.jpg">
 <meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "brink",
+  "url": "https://sergiopaniego.github.io/brink/",
+  "description": "add clean borders to your photos for instagram, stories and tiktok. runs in your browser, photos never leave your device.",
+  "applicationCategory": "DesignApplication",
+  "operatingSystem": "any",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='10' fill='%23f4f1ea'/><rect x='15' y='11' width='34' height='42' fill='%2317191c'/></svg>">
 <style>
   :root {
@@ -257,6 +270,7 @@
   .drop.over { border-color: var(--amber); background: rgba(224,164,88,0.05); }
   .drop h2 { font-family: var(--serif); font-weight: 500; font-size: 20px; color: var(--paper); margin-bottom: 8px; }
   .drop p { color: var(--muted); font-size: 13.5px; }
+  .drop .pitch { margin-top: 14px; font-size: 12px; }
   .drop:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
   /* ---------- filmstrip ---------- */
@@ -489,6 +503,7 @@
     <div class="drop" id="drop" tabindex="0" role="button" aria-label="Add photos">
       <h2>add your photos</h2>
       <p>tap to choose, or drop them here<br>vertical or landscape, jpeg or png</p>
+      <p class="pitch">white borders for instagram, stories and tiktok, at full resolution.<br>everything runs in your browser, your photos never leave your device.</p>
     </div>
   </div>
 </main>
