@@ -86,6 +86,7 @@
 
   .modes { display: flex; flex-direction: column; gap: 4px; }
   .modes label {
+    position: relative;   /* anchors the hidden radio inside the pill */
     display: flex;
     align-items: baseline;
     gap: 8px;
@@ -164,10 +165,13 @@
     width: 28px; height: 28px;
     border: 1px solid var(--panel-edge);
     border-radius: 50%;
-    background: none;
+    background: conic-gradient(#e2574c, #e0a458, #7fb069, #4a90d9, #9b59b6, #e2574c);
     cursor: pointer;
     padding: 0;
   }
+  input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+  input[type="color"]::-webkit-color-swatch { opacity: 0; border: none; }
+  input[type="color"].active { outline: 2px solid var(--amber); outline-offset: 2px; }
 
   .format-row { display: flex; gap: 6px; }
   .format-row button {
@@ -353,14 +357,31 @@
     aside[data-tool="save"]   > section[data-tab="save"] { display: block; }
     aside[data-tool="save"]   > .actions { display: flex; flex-direction: row; margin: 12px 0 0; }
     .group-label { display: none; }
-    .modes { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+    .modes {
+      flex-direction: row;
+      flex-wrap: nowrap;
+      gap: 6px;
+      max-width: 100%;
+      overflow-x: auto;
+      scrollbar-width: none;
+      padding-bottom: 2px;
+    }
+    .modes::-webkit-scrollbar { display: none; }
     .modes label {
+      flex: none;
+      white-space: nowrap;
       border: 1px solid var(--panel-edge);
       border-radius: 999px;
       padding: 8px 14px;
       gap: 6px;
     }
     .modes .name { flex: none; }
+    aside[data-tool="frame"] > [data-tab="frame"] {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    aside[data-tool="frame"] > [data-tab="frame"] .slider-row { width: 100%; }
     .swatch, input[type="color"] { width: 38px; height: 38px; }
     .align-grid { grid-template-columns: repeat(3, 42px); gap: 6px; }
     .align-grid button { width: 42px; height: 42px; }
@@ -1144,12 +1165,14 @@ document.querySelectorAll('.swatch').forEach((s) =>
     state.color = s.dataset.color;
     document.querySelectorAll('.swatch').forEach((x) => x.setAttribute('aria-pressed', x === s));
     $('customColor').value = state.color;
+    $('customColor').classList.remove('active');
     renderPreview();
   }));
 
 $('customColor').addEventListener('input', (e) => {
   state.color = e.target.value;
   document.querySelectorAll('.swatch').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+  e.target.classList.add('active');
   renderPreview();
 });
 
