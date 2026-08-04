@@ -274,7 +274,9 @@
   .drop.over { border-color: var(--amber); background: rgba(224,164,88,0.05); }
   .drop h2 { font-family: var(--serif); font-weight: 500; font-size: 20px; color: var(--paper); margin-bottom: 8px; }
   .drop p { color: var(--muted); font-size: 13.5px; }
-  .drop .pitch { margin-top: 14px; font-size: 12px; }
+  .empty { display: flex; flex-direction: column; align-items: center; }
+  .empty .pitch { color: var(--muted); font-size: 12.5px; margin-top: 10px; text-align: center; }
+  .empty .drop + .pitch { margin-top: 22px; }
   .drop:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
   /* ---------- filmstrip ---------- */
@@ -299,6 +301,25 @@
     line-height: 0;
   }
   .thumb img { height: 100%; border-radius: 2px; display: block; }
+  .thumbwrap { position: relative; flex: 0 0 auto; }
+  .rm {
+    position: absolute;
+    top: -5px; right: -5px;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    border: 1px solid var(--panel-edge);
+    background: var(--ink);
+    color: var(--muted);
+    font: 12px/1 var(--sans);
+    padding: 0;
+    cursor: pointer;
+    display: none;
+    z-index: 2;
+  }
+  .thumbwrap:hover .rm,
+  .thumb[aria-current="true"] + .rm { display: block; }
+  .rm:hover { color: #e2574c; border-color: #e2574c; }
+  .rm:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; display: block; }
   .thumb[aria-current="true"] { border-color: var(--amber); }
   .thumb:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
   .thumb-add {
@@ -389,6 +410,7 @@
     .reset-btn { margin-top: 12px; }
     .btn { flex: 1; padding: 12px; }
     .drop { padding: 40px 24px; }
+    .rm { width: 22px; height: 22px; font-size: 14px; }
 
     #toolbar {
       order: 4;
@@ -521,10 +543,13 @@
     <button id="bgToggle" aria-label="preview on a light background"></button>
     <div class="readout" id="readout"></div>
     <canvas id="preview"></canvas>
-    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Add photos">
-      <h2>add your photos</h2>
-      <p>tap to choose, or drop them here<br>vertical or landscape, jpeg or png</p>
-      <p class="pitch">white borders for instagram, stories and tiktok, at full resolution.<br>everything runs in your browser, your photos never leave your device.</p>
+    <div class="empty" id="empty">
+      <div class="drop" id="drop" tabindex="0" role="button" aria-label="Add photos">
+        <h2>add your photos</h2>
+        <p>tap to choose, or drop them here<br>vertical or landscape, jpeg or png</p>
+      </div>
+      <p class="pitch">🤍 white borders for instagram, stories and tiktok, at full resolution</p>
+      <p class="pitch">🔒 your photos never leave your device, everything runs in your browser</p>
     </div>
   </div>
 </main>
@@ -902,7 +927,7 @@ async function addFiles(fileList) {
   if (state.images.length) {
     state.current = state.images.length - 1;
     document.body.classList.add('has-images');
-    $('drop').style.display = 'none';
+    $('empty').style.display = 'none';
     preview.style.display = 'block';
     $('download').disabled = false;
     $('wsSection').hidden = state.images.length < 2;
@@ -923,6 +948,8 @@ function renderStrip() {
   strip.innerHTML = '';
   strip.classList.toggle('has-images', state.images.length > 0);
   state.images.forEach((img, i) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'thumbwrap';
     const b = document.createElement('button');
     b.className = 'thumb';
     b.draggable = true;
@@ -959,7 +986,13 @@ function renderStrip() {
       renderStrip();
       renderPreview();
     });
-    strip.appendChild(b);
+    const rm = document.createElement('button');
+    rm.className = 'rm';
+    rm.textContent = '×';
+    rm.setAttribute('aria-label', `remove ${img.name}`);
+    rm.addEventListener('click', () => removePhoto(i));
+    wrap.append(b, rm);
+    strip.appendChild(wrap);
   });
   const add = document.createElement('button');
   add.className = 'thumb-add';
@@ -967,6 +1000,33 @@ function renderStrip() {
   add.setAttribute('aria-label', 'Add more photos');
   add.addEventListener('click', () => $('fileInput').click());
   strip.appendChild(add);
+}
+
+function removePhoto(i) {
+  const img = state.images[i];
+  state.images.splice(i, 1);
+  URL.revokeObjectURL(img.thumbUrl);
+  img.bitmap.close?.();
+  state.slotMap = state.slotMap.map((slot) => (slot === img ? null : slot));
+  if (state.current >= state.images.length) state.current = state.images.length - 1;
+  cancelPendingShare();
+  if (!state.images.length) {
+    document.body.classList.remove('has-images');
+    $('empty').style.display = '';
+    preview.style.display = 'none';
+    $('download').disabled = true;
+    $('readout').textContent = '';
+    setTool('none');
+    setWorkspace('singles');
+    renderStrip();
+    return;
+  }
+  $('wsSection').hidden = state.images.length < 2;
+  if (state.images.length < 2 && state.workspace === 'collage') setWorkspace('singles');
+  syncFramingUI();
+  updateControlStates();
+  renderStrip();
+  renderPreview();
 }
 
 /* ---------- controls ---------- */

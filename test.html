@@ -250,6 +250,26 @@ test('tapping a cell selects it, pinch zooms only that cell', async () => {
   pev(win, pv, 'pointerup', 2, cx + 45, cy + 60);
 });
 
+test('photos can be removed, removing the last restores the empty state', async () => {
+  const { doc, B } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'));
+  doc.querySelectorAll('.rm')[0].click();
+  eq(B.state.images.length, 1, 'one removed');
+  eq(B.state.images[0].name, 'b.jpg', 'the right one stays');
+  doc.querySelectorAll('.rm')[0].click();
+  eq(B.state.images.length, 0, 'all removed');
+  ok(doc.getElementById('empty').offsetParent !== null, 'empty state restored');
+  eq(doc.getElementById('preview').style.display, 'none', 'preview hidden');
+});
+
+test('removing a collage photo empties its cell', async () => {
+  const { doc, B } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'), await photo(500, 500, 'c.jpg'));
+  doc.getElementById('wsCollage').click();
+  doc.querySelectorAll('.rm')[1].click();          // remove b.jpg
+  const names = B.state.slotMap.map((s) => (s ? s.name : null));
+  eq(names.join(','), 'a.jpg,', 'cell emptied, not reshuffled');
+  eq(B.state.images.length, 2, 'photo gone from the strip');
+});
+
 /* ---------- interface state ---------- */
 
 test('controls show only what applies in each workspace', async () => {
