@@ -16,7 +16,9 @@ add clean borders to your photos for instagram, stories and tiktok. everything r
 - border size and color are configurable, defaults to a small white border
 - batch: load several photos, tweak once, save all
 - exports jpeg (quality 97) or png, output size always visible
-- works on your phone from the same url
+- on your phone the share sheet saves straight to the photo library
+- preview on a dark or light background, to judge the border the way the feed will show it
+- up to 20 photos, the instagram carousel limit
 
 ## develop
 
@@ -28,5 +30,7 @@ open brink/index.html
 ```
 
 any static server also works, for example `python3 -m http.server`.
+
+[test.html](https://sergiopaniego.github.io/brink/test.html) runs the whole test suite in the browser, every action checked, green or red. open it from a server, not from file://.
 
 built with ai assistance.

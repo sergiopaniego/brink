@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>brink</title>
+<meta name="description" content="add clean borders to your photos for instagram, stories and tiktok. runs in your browser, photos never leave your device.">
+<meta property="og:title" content="brink">
+<meta property="og:description" content="clean borders for your photos, in the browser">
+<meta property="og:image" content="https://sergiopaniego.github.io/brink/screenshot.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='10' fill='%23f4f1ea'/><rect x='15' y='11' width='34' height='42' fill='%2317191c'/></svg>">
 <style>
   :root {
     --ink: #17191c;        /* light-table surface */
@@ -197,6 +203,22 @@
     min-height: 18px;
   }
   .readout .dim2 { color: var(--muted); }
+  #bgToggle {
+    position: absolute;
+    top: 12px; right: 14px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 1px solid var(--panel-edge);
+    background: linear-gradient(90deg, #17191c 50%, #fafafa 50%);
+    cursor: pointer;
+    padding: 0;
+    display: none;
+  }
+  body.has-images #bgToggle { display: block; }
+  #bgToggle:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+  .table.light { background: #fafafa; }
+  .table.light .readout { color: #96661c; }
+  .table.light .readout .dim2 { color: #85857f; }
   #preview {
     max-width: 100%;
     max-height: calc(100% - 40px);
@@ -273,7 +295,8 @@
       overflow: visible;
     }
     aside[data-tool="none"] { display: none; }
-    body.has-images header { display: none; }
+    header { display: none; }
+    body:not(.has-images) #toolbar { display: none; }
     .readout {
       font-size: 11px;
       letter-spacing: 0.03em;
@@ -433,6 +456,7 @@
   </aside>
 
   <div class="table" id="table">
+    <button id="bgToggle" aria-label="preview on a light background"></button>
     <div class="readout" id="readout"></div>
     <canvas id="preview"></canvas>
     <div class="drop" id="drop" tabindex="0" role="button" aria-label="Add photos">
@@ -607,9 +631,17 @@ function drawCollagePhotos(ctx, c) {
   });
 }
 
+let noticeTimer = null;
+function notice(msg) {
+  clearTimeout(noticeTimer);
+  $('readout').textContent = msg;
+  noticeTimer = setTimeout(renderPreview, 2500);
+}
+
 /* ---------- preview ---------- */
 function renderPreview() {
   if (!state.images.length) return;
+  cancelPendingShare();
   if (state.workspace === 'collage') renderCollagePreview();
   else renderSinglePreview();
 }
@@ -688,11 +720,12 @@ async function saveBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 
-async function saveOne(img) {
-  await saveBlob(await exportBlob(img), outName(img));
+async function exportFile(img) {
+  const blob = await exportBlob(img);
+  return new File([blob], outName(img), { type: blob.type });
 }
 
-async function saveCollage() {
+async function collageFile() {
   const c = computeCollage();
   const canvas = document.createElement('canvas');
   canvas.width = c.W; canvas.height = c.H;
@@ -704,20 +737,62 @@ async function saveCollage() {
   const ext = state.format === 'png' ? 'png' : 'jpg';
   const base = (c.imgs.find(Boolean)?.name ?? 'collage').replace(/\.[^.]+$/, '');
   const blob = await new Promise((r) => canvas.toBlob(r, type, 0.97));
-  await saveBlob(blob, `${base}-collage-${MODES[state.mode].suffix}.${ext}`);
+  return new File([blob], `${base}-collage-${MODES[state.mode].suffix}.${ext}`, { type });
+}
+
+/* on touch devices the share sheet saves straight to the photo library;
+   files are prepared first, then a second tap hands them to the sheet */
+const touchShare = matchMedia('(pointer: coarse)').matches;
+let pendingShare = null;   // { btn, files, label }
+
+function cancelPendingShare() {
+  if (!pendingShare) return;
+  pendingShare.btn.textContent = pendingShare.label;
+  pendingShare = null;
+}
+
+async function deliver(btn, label, build) {
+  if (pendingShare && pendingShare.btn === btn) {
+    const files = pendingShare.files;
+    pendingShare = null;
+    btn.textContent = label;
+    navigator.share({ files }).catch(() => {});
+    return;
+  }
+  cancelPendingShare();
+  btn.disabled = true;
+  const files = await build();
+  btn.disabled = false;
+  btn.textContent = label;
+  if (touchShare && navigator.canShare && navigator.canShare({ files })) {
+    pendingShare = { btn, files, label };
+    btn.textContent = files.length > 1 ? `share ${files.length} photos` : 'share photo';
+    return;
+  }
+  for (const f of files) {
+    await saveBlob(f, f.name);
+    if (files.length > 1) await new Promise((r) => setTimeout(r, 350)); // let the browser queue each download
+  }
 }
 
 $('download').addEventListener('click', () => {
-  if (state.workspace === 'collage') return saveCollage();
+  const btn = $('download');
+  if (state.workspace === 'collage') return deliver(btn, 'save image', async () => [await collageFile()]);
   const img = state.images[state.current];
-  if (img) saveOne(img);
+  if (!img) return;
+  deliver(btn, 'save image', async () => [await exportFile(img)]);
 });
 
-$('downloadAll').addEventListener('click', async () => {
-  for (const img of state.images) {
-    await saveOne(img);
-    await new Promise((r) => setTimeout(r, 350)); // let Chrome queue each download
-  }
+$('downloadAll').addEventListener('click', () => {
+  const btn = $('downloadAll');
+  deliver(btn, 'save all', async () => {
+    const files = [];
+    for (let i = 0; i < state.images.length; i++) {
+      btn.textContent = `preparing ${i + 1} of ${state.images.length}`;
+      files.push(await exportFile(state.images[i]));
+    }
+    return files;
+  });
 });
 
 /* ---------- loading ---------- */
@@ -730,7 +805,14 @@ async function decode(file) {
 }
 
 async function addFiles(fileList) {
-  const files = [...fileList].filter((f) => f.type.startsWith('image/'));
+  let files = [...fileList].filter((f) => f.type.startsWith('image/'));
+  let msg = null;
+  const room = 20 - state.images.length;   // instagram carousel limit
+  if (files.length > room) {
+    files = files.slice(0, Math.max(0, room));
+    msg = '20 photos max, the instagram carousel limit';
+  }
+  const unreadable = [];
   for (const file of files) {
     try {
       const bitmap = await decode(file);
@@ -738,9 +820,10 @@ async function addFiles(fileList) {
                           adj: { zoom: 1, dx: 0, dy: 0 },
                           cadj: { zoom: 1, dx: 0, dy: 0 } });
     } catch {
-      console.warn('Could not decode', file.name);
+      unreadable.push(file.name);
     }
   }
+  if (unreadable.length) msg = `could not read ${unreadable.join(', ')}`;
   if (state.images.length) {
     state.current = state.images.length - 1;
     document.body.classList.add('has-images');
@@ -756,6 +839,7 @@ async function addFiles(fileList) {
     renderStrip();
     renderPreview();
   }
+  if (msg) notice(msg);
 }
 
 /* ---------- filmstrip ---------- */
@@ -824,7 +908,7 @@ function setTool(tool) {
 }
 document.querySelectorAll('#toolbar button').forEach((b) =>
   b.addEventListener('click', () => setTool(b.dataset.tool)));
-setTool('format');
+setTool('none');
 
 /* ---------- workspace ---------- */
 function updateControlStates() {
@@ -840,6 +924,7 @@ function updateControlStates() {
   document.querySelectorAll('#tplRow button').forEach((b) =>
     b.setAttribute('aria-pressed', b.dataset.tpl === state.template));
   $('downloadAll').hidden = !single || state.images.length < 2;
+  $('downloadAll').disabled = $('downloadAll').hidden;
 }
 
 function setWorkspace(ws) {
@@ -1015,12 +1100,17 @@ $('customColor').addEventListener('input', (e) => {
 });
 
 function setFormat(fmt) {
+  cancelPendingShare();
   state.format = fmt;
   $('fmtJpeg').setAttribute('aria-pressed', fmt === 'jpeg');
   $('fmtPng').setAttribute('aria-pressed', fmt === 'png');
 }
 $('fmtJpeg').addEventListener('click', () => setFormat('jpeg'));
 $('fmtPng').addEventListener('click', () => setFormat('png'));
+
+$('bgToggle').addEventListener('click', () => $('table').classList.toggle('light'));
+
+window.brink = { state, MODES, TEMPLATES };   // test hook, see test.html
 
 /* ---------- drop zone / file input ---------- */
 const drop = $('drop');

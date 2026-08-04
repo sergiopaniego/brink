@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>brink tests</title>
+<style>
+  body {
+    background: #17191c;
+    color: #d9d6cf;
+    font: 14px/1.7 ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 24px;
+    max-width: 760px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 15px; color: #f4f1ea; font-weight: 600; }
+  #summary { margin: 14px 0 18px; font-weight: 600; }
+  #summary.green { color: #7fb069; }
+  #summary.red { color: #e2574c; }
+  li { list-style: none; }
+  .pass { color: #7fb069; }
+  .fail { color: #e2574c; }
+  iframe { position: absolute; left: -12000px; width: 1200px; height: 800px; border: 0; }
+</style>
+</head>
+<body>
+<h1>brink test suite</h1>
+<div id="summary">running, exports take a few seconds...</div>
+<ul id="log"></ul>
+
+<script>
+'use strict';
+
+const logEl = document.getElementById('log');
+let passed = 0, failed = 0;
+
+function report(name, err) {
+  const li = document.createElement('li');
+  li.className = err ? 'fail' : 'pass';
+  li.textContent = `${err ? 'fail' : 'pass'}  ${name}${err ? `  (${err})` : ''}`;
+  logEl.appendChild(li);
+  err ? failed++ : passed++;
+}
+
+function ok(cond, msg) { if (!cond) throw new Error(msg); }
+function eq(a, b, msg) { if (a !== b) throw new Error(`${msg}: got ${a}, want ${b}`); }
+function close(a, b, tol, msg) { if (Math.abs(a - b) > tol) throw new Error(`${msg}: got ${a}, want ~${b}`); }
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+async function until(fn, ms, msg) {
+  const t0 = performance.now();
+  while (performance.now() - t0 < ms) { if (fn()) return; await wait(50); }
+  throw new Error(msg);
+}
+
+async function photo(w, h, name) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const x = c.getContext('2d');
+  x.fillStyle = '#3a6ea5'; x.fillRect(0, 0, w, h);
+  x.fillStyle = '#e08b5a'; x.fillRect(0, 0, w, Math.round(h / 3));
+  const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.9));
+  return new File([blob], name, { type: 'image/jpeg' });
+}
+
+let frames = [];
+async function freshApp(...photos) {
+  const frame = document.createElement('iframe');
+  document.body.appendChild(frame);
+  frames.push(frame);
+  await new Promise((res, rej) => { frame.onload = res; frame.onerror = rej; frame.src = 'index.html'; });
+  const win = frame.contentWindow;
+  if (photos.length) await win.addFiles(photos);
+  return { win, doc: frame.contentDocument, B: win.brink };
+}
+
+function pev(win, el, type, id, x, y) {
+  el.dispatchEvent(new win.PointerEvent(type, {
+    pointerId: id, clientX: x, clientY: y, bubbles: true, isPrimary: id === 1,
+  }));
+}
+
+const suite = [];
+function test(name, fn) { suite.push({ name, fn }); }
+
+/* ---------- loading ---------- */
+
+test('loads photos, shows preview and thumbnails', async () => {
+  const { doc, B } = await freshApp(await photo(800, 1200, 'a.jpg'), await photo(1200, 800, 'b.jpg'));
+  eq(B.state.images.length, 2, 'images');
+  eq(doc.getElementById('preview').style.display, 'block', 'preview shown');
+  eq(doc.querySelectorAll('.thumb').length, 2, 'thumbnails');
+});
+
+test('caps the set at 20 photos and says so', async () => {
+  const files = [];
+  for (let i = 0; i < 22; i++) files.push(await photo(80, 120, `p${i}.jpg`));
+  const { doc, B } = await freshApp(...files);
+  eq(B.state.images.length, 20, 'capped');
+  ok(doc.getElementById('readout').textContent.includes('20 photos max'), 'cap notice shown');
+});
+
+test('unreadable files are reported, good ones still load', async () => {
+  const bad = new File([new Uint8Array([1, 2, 3])], 'broken.jpg', { type: 'image/jpeg' });
+  const { doc, B } = await freshApp(bad, await photo(400, 600, 'good.jpg'));
+  eq(B.state.images.length, 1, 'good one loaded');
+  ok(doc.getElementById('readout').textContent.includes('could not read broken.jpg'), 'failure notice shown');
+});
+
+/* ---------- singles geometry ---------- */
+
+test('fit hits every ratio exactly and never rescales the photo', async () => {
+  const { win, B } = await freshApp(await photo(800, 1200, 'a.jpg'));
+  const img = B.state.images[0];
+  for (const [mode, ratio] of [['post', 4 / 5], ['square', 1], ['wide', 1.91], ['story', 9 / 16]]) {
+    B.state.mode = mode;
+    const l = win.layoutFor(img);
+    close(l.cw / l.ch, ratio, 0.002, `${mode} ratio`);
+    eq(l.dw, 800, `${mode} keeps width`);
+    eq(l.dh, 1200, `${mode} keeps height`);
+  }
+  B.state.mode = 'original';
+  const l = win.layoutFor(img);
+  eq(l.m, Math.round(0.02 * 1200), 'border is 2 percent of the long side');
+  eq(l.cw, 800 + 2 * l.m, 'as shot adds border only');
+});
+
+test('position grid leaves exactly one border at the chosen edge', async () => {
+  const { win, B } = await freshApp(await photo(1200, 800, 'a.jpg'));
+  const img = B.state.images[0];
+  B.state.mode = 'post';
+  B.state.alignV = 'bottom';
+  let l = win.layoutFor(img);
+  eq(l.ch - l.dh - l.y, l.m, 'bottom gap equals border');
+  B.state.alignV = 'top';
+  l = win.layoutFor(img);
+  eq(l.y, l.m, 'top gap equals border');
+  B.state.alignV = 'center';
+});
+
+test('fill crops to the ratio, clamps panning, zoom shrinks the source window', async () => {
+  const { win, B } = await freshApp(await photo(800, 1200, 'a.jpg'));
+  const img = B.state.images[0];
+  B.state.mode = 'post';
+  B.state.fit = 'fill';
+  let l = win.layoutFor(img);
+  close(l.cw / l.ch, 0.8, 0.002, 'fill ratio');
+  eq(l.dw, 800, 'full width kept');
+  ok(l.trimH > 0, 'height trimmed');
+  img.adj.dy = 99999;
+  l = win.layoutFor(img);
+  ok(l.sy <= 1200 - l.sh + 0.01, 'pan clamped to the photo');
+  const swAt1 = l.sw;
+  img.adj.zoom = 2;
+  l = win.layoutFor(img);
+  close(l.sw, swAt1 / 2, 1, 'zoom x2 halves the source window');
+  eq(l.cw, win.layoutFor(img).cw, 'canvas size unchanged by zoom');
+  win.resetFraming();
+  eq(img.adj.zoom, 1, 'reset restores zoom');
+  eq(img.adj.dy, 0, 'reset restores pan');
+});
+
+/* ---------- export ---------- */
+
+test('exports match the computed size, format and filename', async () => {
+  const { win, B } = await freshApp(await photo(800, 1200, 'a.jpg'));
+  const img = B.state.images[0];
+  const l = win.layoutFor(img);
+  let blob = await win.exportBlob(img);
+  let bmp = await createImageBitmap(blob);
+  eq(bmp.width, l.cw, 'export width');
+  eq(bmp.height, l.ch, 'export height');
+  eq(blob.type, 'image/jpeg', 'jpeg by default');
+  eq(win.outName(img), 'a-4x5.jpg', 'filename suffix');
+  B.state.format = 'png';
+  blob = await win.exportBlob(img);
+  eq(blob.type, 'image/png', 'png when selected');
+  eq(win.outName(img), 'a-4x5.png', 'png extension');
+});
+
+test('save buttons trigger the right downloads', async () => {
+  const { win, doc } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'));
+  const fired = [];
+  win.HTMLAnchorElement.prototype.click = function () { fired.push(this.download); };
+  doc.getElementById('download').click();
+  await until(() => fired.length === 1, 8000, 'save image never fired');
+  eq(fired[0], 'b-4x5.jpg', 'saves the selected photo');
+  doc.getElementById('downloadAll').click();
+  await until(() => fired.length === 3, 15000, 'save all did not fire for every photo');
+  ok(fired.includes('a-4x5.jpg'), 'first photo saved');
+});
+
+/* ---------- collage ---------- */
+
+test('collage sizes the canvas so no photo upscales', async () => {
+  const { win, doc, B } = await freshApp(await photo(800, 1200, 'a.jpg'), await photo(1200, 800, 'b.jpg'));
+  doc.getElementById('wsCollage').click();
+  for (const tpl of ['2h', '2v']) {
+    doc.querySelector(`#tplRow button[data-tpl="${tpl}"]`).click();
+    const c = win.computeCollage();
+    close(c.W / c.H, 0.8, 0.002, `${tpl} canvas ratio`);
+    c.imgs.forEach((img, i) => {
+      if (!img) return;
+      const [, , w, h] = c.rects[i];
+      ok(Math.max(w / img.bitmap.width, h / img.bitmap.height) <= 1.001, `${tpl} slot ${i} not upscaled`);
+    });
+  }
+});
+
+test('a 2x2 grid works with 2 photos, empty cells stay empty', async () => {
+  const { win, doc, B } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'));
+  doc.getElementById('wsCollage').click();
+  doc.querySelector('#tplRow button[data-tpl="4g"]').click();
+  const c = win.computeCollage();
+  eq(c.imgs.length, 4, 'four cells');
+  eq(c.imgs.filter(Boolean).length, 2, 'two filled');
+  close(c.W / c.H, 0.8, 0.002, 'ratio holds with empties');
+});
+
+test('cells reassign, swap and empty via thumbnail taps', async () => {
+  const { doc, B } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'));
+  doc.getElementById('wsCollage').click();
+  const names = () => B.state.slotMap.map((s) => (s ? s.name : null)).join(',');
+  eq(names(), 'a.jpg,b.jpg', 'auto fill');
+  B.state.slot = 0;
+  doc.querySelectorAll('.thumb')[1].click();       // put b in cell 1: swap
+  eq(names(), 'b.jpg,a.jpg', 'swap');
+  doc.querySelectorAll('.thumb')[1].click();       // same again: empty the cell
+  eq(names(), ',a.jpg', 'emptied');
+  doc.querySelectorAll('.thumb')[1].click();       // and back
+  eq(names(), 'b.jpg,a.jpg', 'refilled');
+});
+
+test('tapping a cell selects it, pinch zooms only that cell', async () => {
+  const { win, doc, B } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(400, 600, 'b.jpg'));
+  doc.getElementById('wsCollage').click();
+  const pv = doc.getElementById('preview');
+  const r = pv.getBoundingClientRect();
+  const cx = r.left + r.width * 0.25, cy = r.top + r.height / 2;   // inside cell 1
+  pev(win, pv, 'pointerdown', 1, cx - 15, cy);
+  pev(win, pv, 'pointerdown', 2, cx + 15, cy);                     // second finger keeps the cell
+  eq(B.state.slot, 0, 'cell 1 stays selected');
+  pev(win, pv, 'pointermove', 2, cx + 45, cy);                     // pinch out: distance 30 to 60
+  close(B.state.slotMap[0].cadj.zoom, 2, 0.05, 'pinch doubled the zoom');
+  eq(B.state.slotMap[1].cadj.zoom, 1, 'other cell untouched');
+  pev(win, pv, 'pointerup', 1, cx - 15, cy);
+  const dyBefore = B.state.slotMap[0].cadj.dy;
+  pev(win, pv, 'pointermove', 2, cx + 45, cy + 60);                // one finger pans
+  ok(B.state.slotMap[0].cadj.dy !== dyBefore, 'single finger pans the cell');
+  pev(win, pv, 'pointerup', 2, cx + 45, cy + 60);
+});
+
+/* ---------- interface state ---------- */
+
+test('controls show only what applies in each workspace', async () => {
+  const { doc } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'));
+  const vis = (id) => doc.getElementById(id).offsetParent !== null;
+  ok(vis('fitRow') && vis('alignGrid') && !vis('tplSection'), 'singles controls');
+  doc.getElementById('wsCollage').click();
+  ok(!vis('fitRow') && !vis('alignGrid') && !vis('modeOriginal') && vis('tplSection') && vis('zoomRow'), 'collage controls');
+  doc.getElementById('wsSingles').click();
+  ok(vis('fitRow') && vis('alignGrid') && vis('modeOriginal'), 'singles restored');
+});
+
+test('preview background toggles between dark and light', async () => {
+  const { doc } = await freshApp(await photo(400, 600, 'a.jpg'));
+  const table = doc.getElementById('table');
+  doc.getElementById('bgToggle').click();
+  ok(table.classList.contains('light'), 'light background on');
+  doc.getElementById('bgToggle').click();
+  ok(!table.classList.contains('light'), 'back to dark');
+});
+
+/* ---------- run ---------- */
+
+(async () => {
+  for (const { name, fn } of suite) {
+    try { await fn(); report(name); }
+    catch (err) { report(name, err.message); }
+    for (const f of frames) f.remove();
+    frames = [];
+  }
+  const summary = document.getElementById('summary');
+  summary.textContent = `${passed} passed, ${failed} failed`;
+  summary.className = failed ? 'red' : 'green';
+  document.title = failed ? `brink tests, ${failed} failed` : 'brink tests, all green';
+})();
+</script>
+</body>
+</html>
