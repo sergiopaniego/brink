@@ -201,7 +201,26 @@
     letter-spacing: 0.06em;
     color: var(--amber);
     min-height: 18px;
+    max-width: calc(100% - 90px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
+  #infoToggle {
+    position: absolute;
+    top: 12px; right: 44px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 1px solid var(--panel-edge);
+    background: none;
+    color: var(--muted);
+    font: italic 600 13px var(--serif);
+    cursor: pointer;
+    padding: 0;
+    display: none;
+  }
+  #infoToggle[aria-pressed="true"] { color: var(--amber); border-color: rgba(224,164,88,0.5); }
+  #infoToggle:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
   .readout .dim2 { color: var(--muted); }
   #bgToggle {
     position: absolute;
@@ -298,13 +317,20 @@
     header { display: none; }
     body:not(.has-images) #toolbar { display: none; }
     .readout {
+      display: none;
+      position: absolute;
+      top: 10px; left: 12px;
+      max-width: calc(100% - 86px);
+      z-index: 3;
+      background: var(--panel);
+      border: 1px solid var(--panel-edge);
+      border-radius: 7px;
+      padding: 5px 10px;
       font-size: 11px;
       letter-spacing: 0.03em;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 100%;
     }
+    .table.show-info .readout { display: block; }
+    body.has-images #infoToggle { display: block; }
     aside > [data-tab] { display: none; }
     aside[data-tool="format"] > [data-tab="format"],
     aside[data-tool="border"] > [data-tab="border"],
@@ -456,6 +482,7 @@
   </aside>
 
   <div class="table" id="table">
+    <button id="infoToggle" aria-label="output size details" aria-pressed="false">i</button>
     <button id="bgToggle" aria-label="preview on a light background"></button>
     <div class="readout" id="readout"></div>
     <canvas id="preview"></canvas>
@@ -635,7 +662,13 @@ let noticeTimer = null;
 function notice(msg) {
   clearTimeout(noticeTimer);
   $('readout').textContent = msg;
-  noticeTimer = setTimeout(renderPreview, 2500);
+  const table = $('table');
+  const autoShown = !table.classList.contains('show-info');
+  if (autoShown) table.classList.add('show-info');
+  noticeTimer = setTimeout(() => {
+    if (autoShown) table.classList.remove('show-info');
+    renderPreview();
+  }, 2500);
 }
 
 /* ---------- preview ---------- */
@@ -765,8 +798,14 @@ async function deliver(btn, label, build) {
   btn.disabled = false;
   btn.textContent = label;
   if (touchShare && navigator.canShare && navigator.canShare({ files })) {
-    pendingShare = { btn, files, label };
-    btn.textContent = files.length > 1 ? `share ${files.length} photos` : 'share photo';
+    try {
+      await navigator.share({ files });        // one tap while the gesture is still valid
+    } catch (err) {
+      if (err.name !== 'AbortError') {         // gesture expired: offer a second tap
+        pendingShare = { btn, files, label };
+        btn.textContent = files.length > 1 ? `share ${files.length} photos` : 'share photo';
+      }
+    }
     return;
   }
   for (const f of files) {
@@ -1109,6 +1148,11 @@ $('fmtJpeg').addEventListener('click', () => setFormat('jpeg'));
 $('fmtPng').addEventListener('click', () => setFormat('png'));
 
 $('bgToggle').addEventListener('click', () => $('table').classList.toggle('light'));
+
+$('infoToggle').addEventListener('click', () => {
+  const on = $('table').classList.toggle('show-info');
+  $('infoToggle').setAttribute('aria-pressed', on);
+});
 
 window.brink = { state, MODES, TEMPLATES };   // test hook, see test.html
 
