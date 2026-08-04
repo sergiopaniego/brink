@@ -162,6 +162,76 @@ test('fill crops to the ratio, clamps panning, zoom shrinks the source window', 
   eq(img.adj.dy, 0, 'reset restores pan');
 });
 
+test('rotation scales just enough to leave no gaps and resets clean', async () => {
+  const { win, doc, B } = await freshApp(await photo(800, 1200, 'a.jpg'));
+  const img = B.state.images[0];
+  B.state.mode = 'post';
+  B.state.fit = 'fill';
+  const flat = win.layoutFor(img);
+  doc.getElementById('rot').value = 30;
+  doc.getElementById('rot').dispatchEvent(new Event('input', { bubbles: true }));
+  const l = win.layoutFor(img);
+  const rad = Math.PI / 6, ac = Math.cos(rad), as = Math.sin(rad);
+  const k = Math.max((l.dw * ac + l.dh * as) / l.dw, (l.dw * as + l.dh * ac) / l.dh);
+  close(l.f, k, 0.01, 'cover factor');
+  eq(l.cw, flat.cw, 'canvas width unchanged by rotation');
+  eq(l.ch, flat.ch, 'canvas height unchanged by rotation');
+  img.adj.dy = 99999;
+  const l2 = win.layoutFor(img);
+  const hy = (l2.dw * as + l2.dh * ac) / (2 * l2.f);
+  ok(l2.ucy + hy <= 1200 + 0.01, 'rotated sample clamped inside the photo');
+  win.resetFraming();
+  eq(img.adj.rot, 0, 'reset clears rotation');
+  eq(doc.getElementById('rotVal').textContent, '0\u00b0', 'slider label synced');
+});
+
+test('the rotated export keeps the photo center in place', async () => {
+  const { win, doc, B } = await freshApp(await photo(400, 600, 'a.jpg'));
+  B.state.format = 'png';
+  B.state.fit = 'fill';
+  const img = B.state.images[0];
+  img.adj.rot = 30;
+  const l = win.layoutFor(img);
+  const bmp = await createImageBitmap(await win.exportBlob(img));
+  const c = document.createElement('canvas');
+  c.width = bmp.width; c.height = bmp.height;
+  const x = c.getContext('2d');
+  x.drawImage(bmp, 0, 0);
+  const px = x.getImageData(Math.round(l.x + l.dw / 2), Math.round(l.y + l.dh / 2), 1, 1).data;
+  const ref = document.createElement('canvas');
+  ref.width = 400; ref.height = 600;
+  const rx = ref.getContext('2d');
+  rx.drawImage(img.bitmap, 0, 0);
+  const want = rx.getImageData(200, 300, 1, 1).data;
+  for (let i = 0; i < 3; i++) ok(Math.abs(px[i] - want[i]) <= 8, `channel ${i}: ${px[i]} vs ${want[i]}`);
+});
+
+test('two finger twist rotates, plain pinch stays straight', async () => {
+  const { win, doc, B } = await freshApp(await photo(400, 600, 'a.jpg'));
+  doc.getElementById('fillBtn').click();
+  const img = B.state.images[0];
+  const pv = doc.getElementById('preview');
+  const r = pv.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  // twist: second finger sweeps 30 degrees at constant distance
+  pev(win, pv, 'pointerdown', 1, cx - 40, cy);
+  pev(win, pv, 'pointerdown', 2, cx + 40, cy);
+  pev(win, pv, 'pointermove', 2, cx - 40 + 80 * Math.cos(Math.PI / 6), cy + 80 * Math.sin(Math.PI / 6));
+  ok(img.adj.rot > 20 && img.adj.rot < 32, `twist rotated ${img.adj.rot}`);
+  close(img.adj.zoom, 1, 0.05, 'distance held, zoom untouched');
+  pev(win, pv, 'pointerup', 1, cx - 40, cy);
+  pev(win, pv, 'pointerup', 2, cx, cy);
+  // plain pinch: distance grows on the same axis, no angle change
+  win.resetFraming();
+  pev(win, pv, 'pointerdown', 1, cx - 20, cy);
+  pev(win, pv, 'pointerdown', 2, cx + 20, cy);
+  pev(win, pv, 'pointermove', 2, cx + 60, cy);
+  ok(img.adj.zoom > 1.5, 'pinch zoomed');
+  eq(img.adj.rot, 0, 'no accidental rotation');
+  pev(win, pv, 'pointerup', 1, cx - 20, cy);
+  pev(win, pv, 'pointerup', 2, cx + 60, cy);
+});
+
 /* ---------- export ---------- */
 
 test('exports match the computed size, format and filename', async () => {
@@ -187,9 +257,11 @@ test('save buttons trigger the right downloads', async () => {
   doc.getElementById('download').click();
   await until(() => fired.length === 1, 8000, 'save image never fired');
   eq(fired[0], 'b-4x5.jpg', 'saves the selected photo');
+  await until(() => doc.getElementById('readout').textContent.includes('saved b-4x5.jpg'), 3000, 'no confirmation after saving');
   doc.getElementById('downloadAll').click();
   await until(() => fired.length === 3, 15000, 'save all did not fire for every photo');
   ok(fired.includes('a-4x5.jpg'), 'first photo saved');
+  await until(() => doc.getElementById('readout').textContent.includes('saved 2 photos'), 3000, 'no confirmation after save all');
 });
 
 /* ---------- collage ---------- */
