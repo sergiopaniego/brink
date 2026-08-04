@@ -250,6 +250,34 @@ test('tapping a cell selects it, pinch zooms only that cell', async () => {
   pev(win, pv, 'pointerup', 2, cx + 45, cy + 60);
 });
 
+test('thumbnail taps switch the selected photo', async () => {
+  const { doc, B } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'), await photo(500, 500, 'c.jpg'));
+  eq(B.state.current, 2, 'last added starts selected');
+  doc.querySelectorAll('.thumb')[0].click();
+  eq(B.state.current, 0, 'tap selects the first');
+  doc.querySelectorAll('.thumb')[1].click();
+  eq(B.state.current, 1, 'tap selects the second');
+});
+
+test('remove button shows only on the selected thumbnail', async () => {
+  const { doc } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'), await photo(500, 500, 'c.jpg'));
+  const visible = () => [...doc.querySelectorAll('.rm')].filter((b) => doc.defaultView.getComputedStyle(b).display !== 'none');
+  eq(visible().length, 1, 'exactly one visible remove button');
+  ok(doc.querySelectorAll('.thumbwrap')[2].contains(visible()[0]), 'it sits on the selected photo');
+  doc.querySelectorAll('.thumb')[0].click();
+  ok(doc.querySelectorAll('.thumbwrap')[0].contains(visible()[0]), 'it follows the selection');
+});
+
+test('nothing covers the thumbnails', async () => {
+  const { doc } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'), await photo(500, 500, 'c.jpg'));
+  await until(() => doc.querySelectorAll('.thumb')[0].getBoundingClientRect().width > 20, 3000, 'thumbnails never laid out');
+  for (const t of doc.querySelectorAll('.thumb')) {
+    const r = t.getBoundingClientRect();
+    const el = doc.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    ok(el === t || t.contains(el), `thumb center hits ${el ? el.className || el.tagName : 'nothing'}`);
+  }
+});
+
 test('photos can be removed, removing the last restores the empty state', async () => {
   const { doc, B } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'));
   doc.querySelectorAll('.rm')[0].click();

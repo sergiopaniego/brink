@@ -316,8 +316,11 @@
     display: none;
     z-index: 2;
   }
-  .thumbwrap:hover .rm,
   .thumb[aria-current="true"] + .rm { display: block; }
+  @media (hover: hover) {
+    /* hover reveal only where a mouse exists: on touch it would eat the first tap */
+    .thumbwrap:hover .rm { display: block; }
+  }
   .rm:hover { color: #e2574c; border-color: #e2574c; }
   .rm:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; display: block; }
   .thumb[aria-current="true"] { border-color: var(--amber); }
