@@ -158,7 +158,8 @@
     background: var(--muted);
     transform: translate(-50%, -50%);
   }
-  .align-grid button:hover { border-color: var(--muted); }
+  .align-grid button:hover:not(:disabled) { border-color: var(--muted); }
+  .align-grid button:disabled { opacity: 0.25; cursor: default; }
   .align-grid button[aria-pressed="true"] {
     border-color: rgba(224,164,88,0.5);
     background: rgba(224,164,88,0.10);
@@ -1114,10 +1115,20 @@ function renderCollagePreview() {
     `${c.W} x ${c.H} px <span class="dim2">border ${c.m} px, editing ${c.imgs[state.slot]?.name ?? 'empty cell'}</span>`;
 }
 
+function updateAlignGrid(l) {
+  const fill = state.fit === 'fill';
+  const hFree = fill ? l.trimW > 0 : l.cw - l.dw - 2 * l.m > 0.5;
+  const vFree = fill ? l.trimH > 0 : l.ch - l.dh - 2 * l.m > 0.5;
+  document.querySelectorAll('#alignGrid button').forEach((b) => {
+    b.disabled = (b.dataset.h !== 'center' && !hFree) || (b.dataset.v !== 'center' && !vFree);
+  });
+}
+
 function renderSinglePreview() {
   const img = state.images[state.current];
   if (!img) return;
   const l = layoutFor(img);
+  updateAlignGrid(l);
 
   const maxSide = 1600;
   const scale = Math.min(1, maxSide / Math.max(l.cw, l.ch));
@@ -1520,8 +1531,27 @@ $('zoom').addEventListener('input', (e) => {
 $('rot').addEventListener('input', (e) => {
   const adj = activeAdj();
   if (!adj) return;
-  adj.rot = parseFloat(e.target.value);
-  $('rotVal').textContent = `${+adj.rot.toFixed(1)}°`;
+  let v = parseFloat(e.target.value);
+  if (Math.abs(v) < 2) v = 0;                   // magnetic zero, impossible to miss
+  adj.rot = v;
+  e.target.value = v;
+  $('rotVal').textContent = `${+v.toFixed(1)}°`;
+  renderPreview();
+});
+
+// tapping a value resets just that control
+$('rotVal').addEventListener('click', () => {
+  const adj = activeAdj();
+  if (!adj) return;
+  adj.rot = 0;
+  syncFramingUI();
+  renderPreview();
+});
+$('zoomVal').addEventListener('click', () => {
+  const adj = activeAdj();
+  if (!adj) return;
+  adj.zoom = 1;
+  syncFramingUI();
   renderPreview();
 });
 

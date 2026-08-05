@@ -185,6 +185,43 @@ test('rotation scales just enough to leave no gaps and resets clean', async () =
   eq(doc.getElementById('rotVal').textContent, '0\u00b0', 'slider label synced');
 });
 
+test('the position grid disables directions with no room', async () => {
+  const { doc, B } = await freshApp(await photo(800, 1200, 'a.jpg'));
+  const cell = (h, v) => doc.querySelector(`#alignGrid button[data-h="${h}"][data-v="${v}"]`);
+  // vertical photo in 4:5 fit: only horizontal slack
+  ok(!cell('left', 'center').disabled, 'left lives');
+  ok(cell('center', 'top').disabled, 'top is dead');
+  ok(!cell('center', 'center').disabled, 'center always lives');
+  ok(cell('left', 'top').disabled, 'corners need both axes');
+  // as shot: no slack anywhere
+  B.state.mode = 'original';
+  doc.querySelector('input[name="mode"][value="original"]').click();
+  ok(cell('left', 'center').disabled && cell('center', 'top').disabled, 'all dead in as shot');
+  // fill flips the rule to the trimmed axis
+  B.state.mode = 'post';
+  doc.getElementById('fillBtn').click();
+  ok(!cell('center', 'top').disabled, 'vertical gravity lives in fill');
+  ok(cell('left', 'center').disabled, 'no horizontal trim, no horizontal gravity');
+});
+
+test('rotation snaps to zero and tapping the value resets it', async () => {
+  const { win, doc, B } = await freshApp(await photo(400, 600, 'a.jpg'));
+  doc.getElementById('fillBtn').click();
+  const img = B.state.images[0];
+  const rot = doc.getElementById('rot');
+  rot.value = 1.5;
+  rot.dispatchEvent(new Event('input', { bubbles: true }));
+  eq(img.adj.rot, 0, 'small angles snap to zero');
+  rot.value = 30;
+  rot.dispatchEvent(new Event('input', { bubbles: true }));
+  eq(img.adj.rot, 30, 'real angles pass through');
+  doc.getElementById('rotVal').click();
+  eq(img.adj.rot, 0, 'tapping the degree label resets rotation');
+  img.adj.zoom = 2;
+  doc.getElementById('zoomVal').click();
+  eq(img.adj.zoom, 1, 'tapping the zoom label resets zoom');
+});
+
 test('the rotated export keeps the photo center in place', async () => {
   const { win, doc, B } = await freshApp(await photo(400, 600, 'a.jpg'));
   B.state.format = 'png';
