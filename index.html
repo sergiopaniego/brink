@@ -96,7 +96,12 @@
     display: flex;
     flex-direction: column;
     gap: 24px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--panel-edge) transparent;
   }
+  aside::-webkit-scrollbar { width: 6px; }
+  aside::-webkit-scrollbar-thumb { background: var(--panel-edge); border-radius: 3px; }
+  aside::-webkit-scrollbar-track { background: transparent; }
   .group-label {
     font: 11px var(--mono);
     letter-spacing: 0.14em;
@@ -187,13 +192,15 @@
     width: 28px; height: 28px;
     border: 1px solid var(--panel-edge);
     border-radius: 50%;
-    background: conic-gradient(#e2574c, #e0a458, #7fb069, #4a90d9, #9b59b6, #e2574c);
     cursor: pointer;
     padding: 0;
   }
   input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
-  input[type="color"]::-webkit-color-swatch { opacity: 0; border: none; }
-  input[type="color"].active { outline: 2px solid var(--amber); outline-offset: 2px; }
+  input[type="color"]::-webkit-color-swatch { border: none; border-radius: 50%; }
+  #customColor { background: conic-gradient(#e2574c, #e0a458, #7fb069, #4a90d9, #9b59b6, #e2574c); }
+  #customColor::-webkit-color-swatch { opacity: 0; }
+  #customColor.active { outline: 2px solid var(--amber); outline-offset: 2px; }
+  #matColor { width: 24px; height: 24px; flex: none; }
 
   .format-row { display: flex; gap: 6px; }
   .format-row button {
@@ -322,7 +329,9 @@
     cursor: pointer;
     line-height: 0;
   }
+  .thumb { -webkit-touch-callout: none; user-select: none; }
   .thumb img { height: 100%; border-radius: 2px; display: block; }
+  .thumbwrap.moving .thumb { outline: 2px dashed var(--amber); outline-offset: 2px; }
   .thumbwrap { position: relative; flex: 0 0 auto; }
   .rm {
     position: absolute;
@@ -373,8 +382,8 @@
       width: 100%;
       border-right: none;
       border-top: 1px solid var(--panel-edge);
-      padding: 14px 16px;
-      gap: 14px;
+      padding: 12px 16px;
+      gap: 12px;
       overflow: visible;
     }
     aside[data-tool="none"] { display: none; }
@@ -414,6 +423,9 @@
     aside[data-tool="border"] > [data-tab="border"],
     aside[data-tool="frame"]  > [data-tab="frame"],
     aside[data-tool="color"]  > [data-tab="color"],
+    aside[data-tool="film"]   > [data-tab="film"],
+    aside[data-tool="grain"]  > [data-tab="grain"],
+    aside[data-tool="mat"]    > [data-tab="mat"],
     aside[data-tool="save"]   > section[data-tab="save"] { display: block; }
     aside[data-tool="save"]   > .actions { display: flex; flex-direction: row; margin: 12px 0 0; }
     .group-label { display: none; }
@@ -430,11 +442,13 @@
     .modes label {
       flex: none;
       white-space: nowrap;
-      border: 1px solid var(--panel-edge);
+      border: none;
+      background: rgba(255,255,255,0.04);
       border-radius: 999px;
       padding: 8px 14px;
       gap: 6px;
     }
+    .modes label:has(input:checked) { background: rgba(224,164,88,0.12); }
     .modes .name { flex: none; }
     aside[data-tool="frame"] > [data-tab="frame"] {
       display: flex;
@@ -455,14 +469,24 @@
       order: 4;
       display: flex;
       flex: none;
-      gap: 6px;
+      gap: 8px;
+      align-items: center;
       padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
       background: var(--panel);
       border-top: 1px solid var(--panel-edge);
     }
-    #toolbar button {
+    #tools {
+      display: flex;
       flex: 1;
-      padding: 10px 0;
+      gap: 4px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      min-width: 0;
+    }
+    #tools::-webkit-scrollbar { display: none; }
+    #toolbar button {
+      flex: none;
+      padding: 10px 13px;
       font: 12px var(--mono);
       color: var(--muted);
       background: none;
@@ -470,6 +494,7 @@
       border-radius: 7px;
       cursor: pointer;
     }
+    #saveTab { flex: none; }
     #toolbar button[aria-pressed="true"] { color: var(--amber); border-color: rgba(224,164,88,0.5); }
     #toolbar button[data-tool="save"] { background: var(--paper); color: #17191c; font: 600 13px var(--sans); }
     #toolbar button:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
@@ -534,18 +559,31 @@
         <input type="range" id="borderPct" min="0" max="10" step="0.25" value="2" aria-label="Border size, percent of long side">
         <span class="slider-val" id="borderVal">2%</span>
       </div>
-      <div class="format-row" id="frameRow" style="margin-top: 12px;">
+    </section>
+
+    <section data-tab="film" id="filmSection">
+      <div class="group-label">Film</div>
+      <div class="format-row" id="frameRow">
         <button data-frame="clean" aria-pressed="true">clean</button>
         <button data-frame="film" aria-pressed="false">film</button>
       </div>
       <button class="reset-btn" id="reroll" hidden>another frame</button>
     </section>
 
-    <section data-tab="border">
+    <section data-tab="grain">
       <div class="group-label">Grain</div>
       <div class="slider-row">
         <input type="range" id="grain" min="0" max="100" step="5" value="0" aria-label="Film grain amount">
         <span class="slider-val" id="grainVal">off</span>
+      </div>
+    </section>
+
+    <section data-tab="mat" id="matSection">
+      <div class="group-label">Mat</div>
+      <div class="slider-row">
+        <input type="range" id="mat" min="0" max="5" step="0.25" value="0" aria-label="Inner mat width, percent of the long side">
+        <span class="slider-val" id="matVal">off</span>
+        <input type="color" id="matColor" value="#000000" aria-label="Mat color">
       </div>
     </section>
 
@@ -618,11 +656,16 @@
 <footer id="strip"></footer>
 
 <nav id="toolbar" aria-label="Tools">
-  <button data-tool="format" aria-pressed="true">format</button>
-  <button data-tool="border" aria-pressed="false">border</button>
-  <button data-tool="frame" aria-pressed="false">frame</button>
-  <button data-tool="color" aria-pressed="false">color</button>
-  <button data-tool="save" aria-pressed="false">save</button>
+  <div id="tools">
+    <button data-tool="format" aria-pressed="false">format</button>
+    <button data-tool="border" aria-pressed="false">border</button>
+    <button data-tool="frame" aria-pressed="false">frame</button>
+    <button data-tool="color" aria-pressed="false">color</button>
+    <button data-tool="film" aria-pressed="false">film</button>
+    <button data-tool="grain" aria-pressed="false">grain</button>
+    <button data-tool="mat" aria-pressed="false">mat</button>
+  </div>
+  <button data-tool="save" aria-pressed="false" id="saveTab">save</button>
 </nav>
 
 <input type="file" id="fileInput" accept="image/*" multiple hidden>
@@ -656,6 +699,8 @@ const state = {
   alignH: 'center',    // 'left' | 'center' | 'right'
   alignV: 'center',    // 'top' | 'center' | 'bottom'
   color: '#ffffff',
+  mat: 0,              // inner mat ring width, percent of the long side
+  matColor: '#000000',
   format: 'jpeg',      // 'jpeg' | 'png'
 };
 
@@ -1012,6 +1057,11 @@ function drawComposition(ctx, img, l, scale) {
   ctx.scale(scale, scale);
   ctx.fillStyle = state.color;
   ctx.fillRect(0, 0, l.cw, l.ch);
+  if (state.mat > 0 && state.frame !== 'film') {
+    const w1 = Math.min(state.mat / 100 * Math.max(l.dw, l.dh), l.m);
+    ctx.fillStyle = state.matColor;
+    ctx.fillRect(l.x - w1, l.y - w1, l.dw + 2 * w1, l.dh + 2 * w1);
+  }
   ctx.imageSmoothingQuality = 'high';
   if (l.rot) {
     ctx.save();
@@ -1112,6 +1162,8 @@ function drawCollagePhotos(ctx, c) {
   });
 }
 
+let movingFrom = null;        // long pressed thumbnail waiting for its drop target
+let suppressNextClick = false;
 let noticeTimer = null;
 let redrawKeepsShare = false;
 function notice(msg) {
@@ -1194,9 +1246,10 @@ function renderSinglePreview() {
   const zoom = l.z > 1 ? `, zoom x${l.z.toFixed(2)}` : '';
   const rot = l.rot ? `, rot ${+l.rot.toFixed(1)}°` : '';
   const grain = img.grain ? `, grain ${img.grain}%` : '';
+  const mat = state.mat && state.frame !== 'film' ? `, mat ${state.mat}%` : '';
   const resampled = l.z > 1 || l.rot ? ' (resampled)' : '';
   $('readout').innerHTML =
-    `${l.cw} x ${l.ch} px <span class="dim2">photo ${l.dw} x ${l.dh}, border ${l.m} px${trim}${zoom}${rot}${grain}${resampled}</span>`;
+    `${l.cw} x ${l.ch} px <span class="dim2">photo ${l.dw} x ${l.dh}, border ${l.m} px${trim}${zoom}${rot}${grain}${mat}${resampled}</span>`;
 }
 
 /* ---------- export ---------- */
@@ -1386,14 +1439,55 @@ function renderStrip() {
   strip.classList.toggle('has-images', state.images.length > 0);
   state.images.forEach((img, i) => {
     const wrap = document.createElement('div');
-    wrap.className = 'thumbwrap';
+    wrap.className = movingFrom === i ? 'thumbwrap moving' : 'thumbwrap';
     const b = document.createElement('button');
     b.className = 'thumb';
     b.draggable = true;
     b.setAttribute('aria-current', i === state.current);
     b.setAttribute('aria-label', img.name);
     b.innerHTML = `<img src="${img.thumbUrl}" alt="" draggable="false">`;
+    b.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'touch') return;
+      let fired = false;
+      const t = setTimeout(() => {
+        fired = true;
+        movingFrom = i;
+        wrap.classList.add('moving');
+      }, 450);
+      const clear = () => {
+        clearTimeout(t);
+        b.removeEventListener('pointerup', onUp);
+        b.removeEventListener('pointermove', onMove);
+        b.removeEventListener('pointercancel', clear);
+      };
+      const onMove = (ev) => {
+        if (Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) > 8) clear();
+      };
+      const onUp = () => {
+        clear();
+        if (fired) {
+          suppressNextClick = true;
+          setTimeout(() => { suppressNextClick = false; }, 300);
+        }
+      };
+      b.addEventListener('pointerup', onUp);
+      b.addEventListener('pointermove', onMove);
+      b.addEventListener('pointercancel', clear);
+    });
     b.addEventListener('click', () => {
+      if (suppressNextClick) { suppressNextClick = false; return; }
+      if (movingFrom !== null) {
+        const from = movingFrom;
+        movingFrom = null;
+        if (from !== i) {
+          const [moved] = state.images.splice(from, 1);
+          state.images.splice(i, 0, moved);
+          state.current = state.images.indexOf(moved);
+        }
+        renderStrip();
+        renderPreview();
+        return;
+      }
       state.current = i;
       if (state.workspace === 'collage') {
         const photo = state.images[i];
@@ -1493,8 +1587,18 @@ function updateControlStates() {
   $('rotRow').hidden = false;
   $('resetFraming').hidden = false;
   $('framingLabel').textContent = single ? 'position' : 'frame';
-  $('frameRow').hidden = !single;
+  $('filmSection').hidden = !single;
   $('reroll').hidden = !single || state.frame === 'clean';
+  $('matSection').hidden = !single || state.frame === 'film';
+  const tb = (name) => document.querySelector(`#toolbar button[data-tool="${name}"]`);
+  tb('film').hidden = !single;
+  tb('mat').hidden = !single || state.frame === 'film';
+  const panel = document.querySelector('aside');
+  if ((panel.dataset.tool === 'film' && $('filmSection').hidden) ||
+      (panel.dataset.tool === 'mat' && $('matSection').hidden)) {
+    panel.dataset.tool = 'none';
+    document.querySelectorAll('#toolbar button').forEach((b) => b.setAttribute('aria-pressed', 'false'));
+  }
   document.querySelectorAll('#frameRow button').forEach((b) =>
     b.setAttribute('aria-pressed', b.dataset.frame === state.frame));
   document.querySelectorAll('#tplRow button').forEach((b) =>
@@ -1771,6 +1875,24 @@ $('grain').addEventListener('input', (e) => {
   renderPreview();
 });
 
+$('mat').addEventListener('input', (e) => {
+  state.mat = parseFloat(e.target.value);
+  $('matVal').textContent = state.mat ? `${state.mat}%` : 'off';
+  renderPreview();
+});
+
+$('matVal').addEventListener('click', () => {
+  state.mat = 0;
+  $('mat').value = 0;
+  $('matVal').textContent = 'off';
+  renderPreview();
+});
+
+$('matColor').addEventListener('input', (e) => {
+  state.matColor = e.target.value;
+  renderPreview();
+});
+
 $('grainVal').addEventListener('click', () => {
   const img = activeImg();
   if (!img) return;
@@ -1785,6 +1907,10 @@ $('infoToggle').addEventListener('click', () => {
   const on = $('table').classList.toggle('show-info');
   $('infoToggle').setAttribute('aria-pressed', on);
 });
+
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
 
 window.brink = { state, MODES, TEMPLATES, BLESSED_FRAMES };   // test hook, see test.html
 

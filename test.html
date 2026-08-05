@@ -546,6 +546,66 @@ test('in a collage each cell keeps its own grain', async () => {
   eq(doc.getElementById('grainVal').textContent, 'off', 'slider follows the selection');
 });
 
+test('the double mat draws its ring inside the border', async () => {
+  const { win, doc, B } = await freshApp(await photo(400, 600, 'a.jpg'));
+  B.state.format = 'png';
+  B.state.mode = 'original';
+  const slider = doc.getElementById('mat');
+  slider.value = 1;
+  slider.dispatchEvent(new Event('input', { bubbles: true }));
+  eq(B.state.mat, 1, 'mat width set');
+  const img = B.state.images[0];
+  const l = win.layoutFor(img);
+  const bmp = await createImageBitmap(await win.exportBlob(img));
+  const c = document.createElement('canvas');
+  c.width = bmp.width; c.height = bmp.height;
+  const x = c.getContext('2d');
+  x.drawImage(bmp, 0, 0);
+  const w1 = 0.01 * 600;
+  const ring = x.getImageData(Math.round(l.x - w1 / 2), Math.round(l.y + l.dh / 2), 1, 1).data;
+  ok(ring[0] < 30 && ring[1] < 30 && ring[2] < 30, 'ring is the mat color');
+  const paper = x.getImageData(3, Math.round(l.ch / 2), 1, 1).data;
+  ok(paper[0] === 255, 'outer border keeps its own color');
+  doc.getElementById('matVal').click();
+  eq(B.state.mat, 0, 'tapping the value turns the mat off');
+});
+
+test('mat and film are exclusive, hidden tools collapse the panel', async () => {
+  const { doc, B } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'));
+  const vis = (id) => doc.getElementById(id).offsetParent !== null;
+  ok(vis('matSection'), 'mat available with a clean frame');
+  doc.querySelector('#frameRow button[data-frame="film"]').click();
+  ok(!vis('matSection'), 'mat hides under a film frame');
+  doc.querySelector('#frameRow button[data-frame="clean"]').click();
+  doc.getElementById('wsCollage').click();
+  ok(!vis('matSection') && !vis('filmSection'), 'both hide in collage');
+  doc.getElementById('wsSingles').click();
+  ok(vis('matSection') && vis('filmSection'), 'both restored in singles');
+});
+
+test('the mobile toolbar scrolls its tools and pins save', async () => {
+  const { doc } = await freshAppAt(430, await photo(400, 600, 'a.jpg'));
+  const tools = [...doc.querySelectorAll('#tools button')].map((b) => b.dataset.tool);
+  eq(tools.join(','), 'format,border,frame,color,film,grain,mat', 'one tool per control');
+  ok(doc.getElementById('saveTab').offsetParent !== null, 'save pinned outside the scroll');
+  doc.querySelector('#tools button[data-tool="grain"]').click();
+  ok(doc.getElementById('grain').offsetParent !== null, 'grain tab shows the grain slider');
+  ok(doc.getElementById('borderPct').offsetParent === null, 'and nothing else');
+});
+
+test('long press arms a thumbnail move, the next tap drops it', async () => {
+  const { win, doc, B } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'), await photo(500, 500, 'c.jpg'));
+  const thumb = doc.querySelectorAll('.thumb')[0];
+  thumb.dispatchEvent(new win.PointerEvent('pointerdown', { pointerType: 'touch', clientX: 10, clientY: 10, bubbles: true, pointerId: 5 }));
+  await wait(550);
+  thumb.dispatchEvent(new win.PointerEvent('pointerup', { pointerType: 'touch', clientX: 10, clientY: 10, bubbles: true, pointerId: 5 }));
+  ok(doc.querySelector('.thumbwrap.moving'), 'thumbnail marked as moving');
+  await wait(350);
+  doc.querySelectorAll('.thumb')[2].click();
+  eq(B.state.images.map((i) => i.name).join(','), 'b.jpg,c.jpg,a.jpg', 'moved to the tapped spot');
+  ok(!doc.querySelector('.thumbwrap.moving'), 'move mode cleared');
+});
+
 test('the pwa manifest and icons are wired', async () => {
   const { doc } = await freshApp();
   ok(doc.querySelector('link[rel="manifest"]'), 'manifest linked');
@@ -559,6 +619,8 @@ test('the pwa manifest and icons are wired', async () => {
     const r = await fetch(icon.src);
     ok(r.ok, `${icon.src} exists`);
   }
+  const sw = await fetch('sw.js');
+  ok(sw.ok, 'service worker file exists');
 });
 
 /* ---------- interface state ---------- */
