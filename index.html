@@ -705,8 +705,22 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
+
+// wide gamut end to end where the browser allows it: iphone photos are
+// display p3, an srgb canvas would quietly desaturate them
+const CANVAS_SPACE = (() => {
+  try {
+    const probe = document.createElement('canvas').getContext('2d', { colorSpace: 'display-p3' });
+    return probe.getContextAttributes && probe.getContextAttributes().colorSpace === 'display-p3'
+      ? 'display-p3' : 'srgb';
+  } catch {
+    return 'srgb';
+  }
+})();
+const ctx2d = (canvas) => canvas.getContext('2d', { colorSpace: CANVAS_SPACE });
+
 const preview = $('preview');
-const pctx = preview.getContext('2d');
+const pctx = ctx2d(preview);
 
 /* ---------- geometry ----------
    fit:  whole photo drawn 1:1, canvas grows to the target ratio.
@@ -847,7 +861,7 @@ function grainTile(seed) {
   const size = 256;
   const c = document.createElement('canvas');
   c.width = size; c.height = size;
-  const ctx = c.getContext('2d');
+  const ctx = ctx2d(c);
   const id = ctx.createImageData(size, size);
   const rnd = rng(seed);
   for (let i = 0; i < id.data.length; i += 4) {
@@ -862,11 +876,12 @@ function grainTile(seed) {
 function drawGrain(ctx, img, x, y, w, h) {
   if (!img.grain) return;
   if (!img.grainCanvas) img.grainCanvas = grainTile(hashSeed(img.name, img.bitmap.width));
-  const g = Math.max(1, Math.max(w, h) / 1400);
+  const g = Math.max(1, Math.max(w, h) / 800);
   ctx.save();
   ctx.beginPath();
   ctx.rect(x, y, w, h);
   ctx.clip();
+  ctx.imageSmoothingEnabled = false;            // crisp cells, phones smear smoothed noise
   ctx.globalCompositeOperation = 'overlay';
   ctx.globalAlpha = img.grain / 100 * 0.5;
   ctx.translate(x, y);
@@ -1261,7 +1276,7 @@ async function renderBlob(draw, w, h, type) {
       const c = document.createElement('canvas');
       c.width = Math.round(w * scale);
       c.height = Math.round(h * scale);
-      draw(c.getContext('2d'), scale);
+      draw(ctx2d(c), scale);
       const blob = await new Promise((r) => c.toBlob(r, type, 0.97));
       if (blob) {
         if (scale < 1) notice(`this device limits canvas size, saved at ${Math.round(scale * 100)}%`);
@@ -1912,7 +1927,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 
-window.brink = { state, MODES, TEMPLATES, BLESSED_FRAMES };   // test hook, see test.html
+window.brink = { state, MODES, TEMPLATES, BLESSED_FRAMES, CANVAS_SPACE };   // test hook, see test.html
 
 /* ---------- drop zone / file input ---------- */
 const drop = $('drop');

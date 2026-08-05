@@ -46,6 +46,17 @@ function ok(cond, msg) { if (!cond) throw new Error(msg); }
 function eq(a, b, msg) { if (a !== b) throw new Error(`${msg}: got ${a}, want ${b}`); }
 function close(a, b, tol, msg) { if (Math.abs(a - b) > tol) throw new Error(`${msg}: got ${a}, want ~${b}`); }
 
+// pixel comparisons must read in the same color space the app renders in
+const CS = (() => {
+  try {
+    const probe = document.createElement('canvas').getContext('2d', { colorSpace: 'display-p3' });
+    return probe.getContextAttributes && probe.getContextAttributes().colorSpace === 'display-p3'
+      ? 'display-p3' : 'srgb';
+  } catch {
+    return 'srgb';
+  }
+})();
+
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(fn, ms, msg) {
   const t0 = performance.now();
@@ -56,7 +67,7 @@ async function until(fn, ms, msg) {
 async function photo(w, h, name) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
-  const x = c.getContext('2d');
+  const x = c.getContext('2d', { colorSpace: CS });
   x.fillStyle = '#3a6ea5'; x.fillRect(0, 0, w, h);
   x.fillStyle = '#e08b5a'; x.fillRect(0, 0, w, Math.round(h / 3));
   const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.9));
@@ -232,12 +243,12 @@ test('the rotated export keeps the photo center in place', async () => {
   const bmp = await createImageBitmap(await win.exportBlob(img));
   const c = document.createElement('canvas');
   c.width = bmp.width; c.height = bmp.height;
-  const x = c.getContext('2d');
+  const x = c.getContext('2d', { colorSpace: CS });
   x.drawImage(bmp, 0, 0);
   const px = x.getImageData(Math.round(l.x + l.dw / 2), Math.round(l.y + l.dh / 2), 1, 1).data;
   const ref = document.createElement('canvas');
   ref.width = 400; ref.height = 600;
-  const rx = ref.getContext('2d');
+  const rx = ref.getContext('2d', { colorSpace: CS });
   rx.drawImage(img.bitmap, 0, 0);
   const want = rx.getImageData(200, 300, 1, 1).data;
   for (let i = 0; i < 3; i++) ok(Math.abs(px[i] - want[i]) <= 8, `channel ${i}: ${px[i]} vs ${want[i]}`);
@@ -481,12 +492,12 @@ test('the photo center survives a film frame untouched', async () => {
   const bmp = await createImageBitmap(await win.exportBlob(img));
   const c = document.createElement('canvas');
   c.width = bmp.width; c.height = bmp.height;
-  const x = c.getContext('2d');
+  const x = c.getContext('2d', { colorSpace: CS });
   x.drawImage(bmp, 0, 0);
   const px = x.getImageData(Math.round(l.x + 200), Math.round(l.y + 300), 1, 1).data;
   const ref = document.createElement('canvas');
   ref.width = 400; ref.height = 600;
-  const rx = ref.getContext('2d');
+  const rx = ref.getContext('2d', { colorSpace: CS });
   rx.drawImage(img.bitmap, 0, 0);
   const want = rx.getImageData(200, 300, 1, 1).data;
   for (let i = 0; i < 3; i++) ok(Math.abs(px[i] - want[i]) <= 2, `channel ${i}: ${px[i]} vs ${want[i]}`);
@@ -523,7 +534,7 @@ test('grain is per photo, deterministic, and confined to the photo', async () =>
   const bmp = await createImageBitmap(await win.exportBlob(img));
   const c = document.createElement('canvas');
   c.width = bmp.width; c.height = bmp.height;
-  const x = c.getContext('2d');
+  const x = c.getContext('2d', { colorSpace: CS });
   x.drawImage(bmp, 0, 0);
   const px = x.getImageData(3, 3, 1, 1).data;
   ok(px[0] === 255 && px[1] === 255 && px[2] === 255, 'border stays clean white');
@@ -559,7 +570,7 @@ test('the double mat draws its ring inside the border', async () => {
   const bmp = await createImageBitmap(await win.exportBlob(img));
   const c = document.createElement('canvas');
   c.width = bmp.width; c.height = bmp.height;
-  const x = c.getContext('2d');
+  const x = c.getContext('2d', { colorSpace: CS });
   x.drawImage(bmp, 0, 0);
   const w1 = 0.01 * 600;
   const ring = x.getImageData(Math.round(l.x - w1 / 2), Math.round(l.y + l.dh / 2), 1, 1).data;
@@ -604,6 +615,11 @@ test('long press arms a thumbnail move, the next tap drops it', async () => {
   doc.querySelectorAll('.thumb')[2].click();
   eq(B.state.images.map((i) => i.name).join(','), 'b.jpg,c.jpg,a.jpg', 'moved to the tapped spot');
   ok(!doc.querySelector('.thumbwrap.moving'), 'move mode cleared');
+});
+
+test('the canvas pipeline matches the browser color space', async () => {
+  const { B } = await freshApp();
+  eq(B.CANVAS_SPACE, CS, 'app and tests agree on the working space');
 });
 
 test('the pwa manifest and icons are wired', async () => {
