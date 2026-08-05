@@ -14,6 +14,7 @@ add clean borders to your photos for instagram, stories and tiktok. everything r
 - drag to reframe, pinch or slide to zoom, twist two fingers or slide to rotate the full turn, the readout says when something resamples
 - collage: 2x1, 1x2, 3x1 and 2x2 templates, place any photo in any cell, leave cells empty, reframe each cell on its own
 - border size and color are configurable, defaults to a small white border
+- film frames: generated scan style rebates from a hand curated seed set, no stored images, every photo gets its own
 - batch: load several photos, remove any, tweak once, save all
 - exports jpeg (quality 97) or png, output size always visible
 - on your phone the share sheet saves straight to the photo library

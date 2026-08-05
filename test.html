@@ -416,6 +416,58 @@ test('on mobile the credit hides behind the info toggle', async () => {
   ok(vis(doc.getElementById('readout')), 'size info shows too');
 });
 
+/* ---------- film frames ---------- */
+
+test('film frames are deterministic per photo, another frame cycles the set', async () => {
+  const { win, doc, B } = await freshApp(await photo(400, 600, 'a.jpg'));
+  B.state.format = 'png';
+  doc.querySelector('#frameRow button[data-frame="film"]').click();
+  const img = B.state.images[0];
+  const bytes = async () => new Uint8Array(await (await win.exportBlob(img)).arrayBuffer());
+  const a = await bytes();
+  const b = await bytes();
+  ok(a.length === b.length && a.every((v, i) => v === b[i]), 'same frame twice, identical bytes');
+  const before = img.frameIdx;
+  doc.getElementById('reroll').click();
+  eq(img.frameIdx, (before + 1) % win.brink.BLESSED_FRAMES.length, 'cycled to the next curated frame');
+  const c = await bytes();
+  ok(c.length !== a.length || !c.every((v, i) => v === a[i]), 'different frame, different bytes');
+});
+
+test('the photo center survives a film frame untouched', async () => {
+  const { win, doc, B } = await freshApp(await photo(400, 600, 'a.jpg'));
+  B.state.format = 'png';
+  B.state.mode = 'original';
+  doc.querySelector('#frameRow button[data-frame="film"]').click();
+  const img = B.state.images[0];
+  const l = win.layoutFor(img);
+  const bmp = await createImageBitmap(await win.exportBlob(img));
+  const c = document.createElement('canvas');
+  c.width = bmp.width; c.height = bmp.height;
+  const x = c.getContext('2d');
+  x.drawImage(bmp, 0, 0);
+  const px = x.getImageData(Math.round(l.x + 200), Math.round(l.y + 300), 1, 1).data;
+  const ref = document.createElement('canvas');
+  ref.width = 400; ref.height = 600;
+  const rx = ref.getContext('2d');
+  rx.drawImage(img.bitmap, 0, 0);
+  const want = rx.getImageData(200, 300, 1, 1).data;
+  for (let i = 0; i < 3; i++) ok(Math.abs(px[i] - want[i]) <= 2, `channel ${i}: ${px[i]} vs ${want[i]}`);
+});
+
+test('frame styles live in singles only', async () => {
+  const { doc } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'));
+  const vis = (id) => doc.getElementById(id).offsetParent !== null;
+  ok(vis('frameRow'), 'selector in singles');
+  ok(!vis('reroll'), 'no reroll while clean');
+  doc.querySelector('#frameRow button[data-frame="film"]').click();
+  ok(vis('reroll'), 'reroll appears with film');
+  doc.getElementById('wsCollage').click();
+  ok(!vis('frameRow') && !vis('reroll'), 'hidden in collage');
+  doc.getElementById('wsSingles').click();
+  ok(vis('frameRow'), 'restored in singles');
+});
+
 /* ---------- interface state ---------- */
 
 test('controls show only what applies in each workspace', async () => {

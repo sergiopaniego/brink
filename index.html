@@ -527,6 +527,11 @@
         <input type="range" id="borderPct" min="0" max="10" step="0.25" value="2" aria-label="Border size, percent of long side">
         <span class="slider-val" id="borderVal">2%</span>
       </div>
+      <div class="format-row" id="frameRow" style="margin-top: 12px;">
+        <button data-frame="clean" aria-pressed="true">clean</button>
+        <button data-frame="film" aria-pressed="false">film</button>
+      </div>
+      <button class="reset-btn" id="reroll" hidden>another frame</button>
     </section>
 
     <section data-tab="frame">
@@ -619,6 +624,9 @@ const MODES = {
   original: { ratio: null,     suffix: 'border' },
 };
 
+// curated by hand from the frame generator, each number is a full frame recipe
+const BLESSED_FRAMES = [1, 2, 4, 5, 6, 7, 9, 10, 11, 12, 13, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 30, 34, 36, 40, 44, 45];
+
 const state = {
   images: [],          // { bitmap, name, thumbUrl, adj, cadj }
   current: -1,
@@ -628,6 +636,7 @@ const state = {
   slotMap: [],         // per-slot image ref or null (empty cell)
   mode: 'post',
   fit: 'fit',          // 'fit' pads with border color, 'fill' crops to the ratio
+  frame: 'clean',      // 'clean' | 'film', a generated frame from the curated seed set
   borderPct: 2,
   alignH: 'center',    // 'left' | 'center' | 'right'
   alignV: 'center',    // 'top' | 'center' | 'bottom'
@@ -714,7 +723,240 @@ function layoutFor(img) {
            trimW: Math.round(iw - sw), trimH: Math.round(ih - sh) };
 }
 
-function drawComposition(ctx, bitmap, l, scale) {
+/* ---------- generated film frames ----------
+   two layers, like a real scan: a tilted negative rebate with an organic
+   inner edge, cropped by a straighter scanner mask. no stored images, the
+   curated seeds in BLESSED_FRAMES are complete recipes. */
+function hashSeed(name, size) {
+  let h = size >>> 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h;
+}
+
+function rng(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function n1d(rnd, n, step) {
+  const ctrl = Array.from({ length: Math.ceil(n / step) + 2 }, () => rnd() * 2 - 1);
+  return (i) => {
+    const t = i / step, k = Math.floor(t), f = t - k;
+    const u = (1 - Math.cos(f * Math.PI)) / 2;
+    return ctrl[k] * (1 - u) + ctrl[k + 1] * u;
+  };
+}
+
+// wobbly rounded rect subpath centered on the origin of the current transform
+function wsub(ctx, w, h, r, amp, rnd, step) {
+  const x = -w / 2, y = -h / 2;
+  const sides = [
+    { a: [x + r, y], b: [x + w - r, y], n: [0, -1] },
+    { a: [x + w, y + r], b: [x + w, y + h - r], n: [1, 0] },
+    { a: [x + w - r, y + h], b: [x + r, y + h], n: [0, 1] },
+    { a: [x, y + h - r], b: [x, y + r], n: [-1, 0] },
+  ];
+  sides.forEach((side, si) => {
+    const len = Math.hypot(side.b[0] - side.a[0], side.b[1] - side.a[1]);
+    const segs = Math.max(12, Math.round(len / 7));
+    const nz = n1d(rnd, segs + 1, step);
+    const fine = n1d(rnd, segs + 1, 1.6);        // second octave: crisp micro grit
+    for (let i = 0; i <= segs; i++) {
+      const t = i / segs;
+      const d = nz(i) * amp + fine(i) * amp * 0.35;
+      const px = side.a[0] + (side.b[0] - side.a[0]) * t + side.n[0] * d;
+      const py = side.a[1] + (side.b[1] - side.a[1]) * t + side.n[1] * d;
+      if (si === 0 && i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    const corners = [[x + w, y], [x + w, y + h], [x, y + h], [x, y]];
+    const cpt = corners[si];
+    const next = sides[(si + 1) % 4];
+    ctx.quadraticCurveTo(cpt[0] + (rnd() - 0.5) * amp, cpt[1] + (rnd() - 0.5) * amp, next.a[0], next.a[1]);
+  });
+  ctx.closePath();
+}
+
+// draws the frame around the photo window of layout l; ctx is already scaled
+function drawFilmFrame(ctx, l, label, scale) {
+  const warm = label >= 1000;                   // warm curation round labels
+  const seed = label * 37 + 5;                  // same mapping the curation page used
+  const rnd = rng(seed);
+  const L = Math.max(l.dw, l.dh);
+  const cap = l.m * 0.8;
+  if (cap < 3) return;
+  const b0 = Math.min(L * (0.008 + rnd() * 0.006), cap);
+  const bT = Math.min(b0 * (0.7 + rnd() * 0.9), cap);
+  const bB = Math.min(b0 * (0.7 + rnd() * 0.9), cap);
+  const bL = Math.min(b0 * (0.7 + rnd() * 0.9), cap);
+  const bR = Math.min(b0 * (0.7 + rnd() * 0.9), cap);
+  const pcx = l.x + l.dw / 2, pcy = l.y + l.dh / 2;
+
+  const a1 = (rnd() - 0.5) * 1.4 * Math.PI / 180;
+  const overlap = b0 * 0.4;
+  const rebEx = Math.max(bT, bB, bL, bR) * 2.5;
+  const h0 = rnd();
+  const hue = warm ? 0.55 + h0 * 0.24 : h0;
+  const base = hue < 0.5 ? '#0d1008' : hue < 0.8 ? '#100e07' : '#0b0d0e';
+  const glow = warm
+    ? `rgba(${150 + Math.round(h0 * 40)},${110 + Math.round(h0 * 20)},40,0.42)`
+    : hue < 0.5 ? 'rgba(105,112,48,0.30)' : hue < 0.8 ? 'rgba(122,98,44,0.26)' : 'rgba(90,95,90,0.20)';
+  const rI = b0 * (0.8 + rnd() * 1.2);
+  const innerSub = () => {
+    ctx.save(); ctx.translate(pcx, pcy); ctx.rotate(a1);
+    wsub(ctx, l.dw - 2 * overlap, l.dh - 2 * overlap, rI, b0 * 0.28, rng(seed + 2), 6);
+    ctx.restore();
+  };
+  const rebPath = () => {
+    ctx.beginPath();
+    ctx.save(); ctx.translate(pcx, pcy); ctx.rotate(a1);
+    wsub(ctx, l.dw + 2 * rebEx, l.dh + 2 * rebEx, b0, b0 * 0.22, rng(seed + 1), 8);
+    ctx.restore();
+    innerSub();
+  };
+  for (const [blur, alpha] of [[b0 * 0.3, 0.8], [b0 * 0.06, 1]]) {
+    ctx.save();
+    ctx.filter = `blur(${blur * scale}px)`;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = base;
+    rebPath();
+    ctx.fill('evenodd');
+    ctx.restore();
+  }
+  ctx.save();
+  ctx.filter = `blur(${b0 * 0.5 * scale}px)`;
+  ctx.strokeStyle = 'rgba(8,10,6,0.35)';
+  ctx.lineWidth = b0 * 0.5;
+  ctx.beginPath(); innerSub(); ctx.stroke();
+  ctx.restore();
+
+  ctx.save();
+  rebPath();
+  ctx.clip('evenodd');
+  const rg = rng(seed + 5);
+  ctx.filter = `blur(${b0 * 0.6 * scale}px)`;
+  ctx.strokeStyle = glow;
+  ctx.lineWidth = b0 * 0.8;
+  ctx.setLineDash([L * (0.1 + rg() * 0.3), L * (0.05 + rg() * 0.25), L * (0.08 + rg() * 0.3), L * (0.1 + rg() * 0.2)]);
+  ctx.lineDashOffset = rg() * L;
+  ctx.beginPath(); innerSub(); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.filter = 'none';
+  const rnd2 = rng(seed + 3);
+  const streak = (sx0, sy0, sw0, sh0, horizontal) => {
+    const g = horizontal
+      ? ctx.createLinearGradient(sx0, 0, sx0 + sw0, 0)
+      : ctx.createLinearGradient(0, sy0, 0, sy0 + sh0);
+    const tone = rnd2() > 0.55 ? 'rgba(110,115,50,0.10)' : 'rgba(0,0,0,0.16)';
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(0.5, tone);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(sx0, sy0, sw0, sh0);
+  };
+  for (let i = 0; i < 5; i++) {
+    if (rnd2() < 0.5) {
+      const w0 = l.cw * (0.1 + rnd2() * 0.35);
+      streak(rnd2() * (l.cw - w0), 0, w0, l.ch, true);
+    } else {
+      const h0s = l.ch * (0.1 + rnd2() * 0.35);
+      streak(0, rnd2() * (l.ch - h0s), l.cw, h0s, false);
+    }
+  }
+  const cornerPts = [
+    [l.x - bL, l.y - bT], [l.x + l.dw + bR, l.y - bT],
+    [l.x - bL, l.y + l.dh + bB], [l.x + l.dw + bR, l.y + l.dh + bB],
+  ];
+  for (const [gx, gy] of cornerPts) {
+    const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, b0 * (2 + rnd2() * 2));
+    g.addColorStop(0, 'rgba(0,0,0,0.30)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, l.cw, l.ch);
+  }
+  // machine edge print: frame numbers, index triangles, dx blocks. no stock names.
+  const rp = rng(seed + 6);
+  if (rp() < 0.65) {
+    ctx.save();
+    ctx.translate(pcx, pcy); ctx.rotate(a1);
+    const ph = l.dh - 2 * overlap;
+    const py = rp() < 0.5 ? -ph / 2 - b0 * 0.5 : ph / 2 + b0 * 0.5;
+    const ink = rp() < 0.75 ? 'rgba(238,146,32,0.95)' : 'rgba(222,102,44,0.95)';
+    ctx.filter = `blur(${Math.max(0.3, b0 * 0.06) * scale}px)`;
+    ctx.fillStyle = ink;
+    const fs = b0 * 1.35;
+    ctx.font = `${fs}px ui-monospace, Menlo, monospace`;
+    ctx.textBaseline = 'middle';
+    const num = 1 + Math.floor(rp() * 28);
+    const marks = [];
+    marks.push({ t: String(num), at: -0.35 + rp() * 0.2 });
+    if (rp() < 0.7) marks.push({ t: `${num}A`, at: 0.05 + rp() * 0.15 });
+    for (const mk of marks) ctx.fillText(mk.t, (l.dw - 2 * overlap) * mk.at, py);
+    if (rp() < 0.6) {
+      const tx = (l.dw - 2 * overlap) * (-0.12 + rp() * 0.1);
+      ctx.beginPath();
+      ctx.moveTo(tx, py - fs * 0.32);
+      ctx.lineTo(tx, py + fs * 0.32);
+      ctx.lineTo(tx + fs * 0.6, py);
+      ctx.closePath();
+      ctx.fill();
+    }
+    if (rp() < 0.7) {
+      const bw = b0 * 0.55, bx0 = (l.dw - 2 * overlap) * (0.22 + rp() * 0.12);
+      for (let i = 0; i < 9; i++) {
+        if (rp() < 0.55) ctx.fillRect(bx0 + i * bw * 1.5, py - bw / 2, bw, bw);
+      }
+    }
+    ctx.filter = 'none';
+    ctx.restore();
+  }
+  const speck = Math.max(1, Math.round(L * 0.0008));
+  const speckColors = ['#e8e4da', '#e2783c', '#c43c32', '#6ea0aa', '#968f5a'];
+  for (let i = 0; i < 180; i++) {
+    ctx.fillStyle = speckColors[Math.floor(rnd2() * speckColors.length)];
+    ctx.globalAlpha = 0.12 + rnd2() * 0.4;
+    const sz = speck * (0.6 + rnd2() * 1.8);
+    ctx.fillRect(rnd2() * l.cw, rnd2() * l.ch, sz, sz);
+  }
+  ctx.globalAlpha = 1;
+  if (rnd2() < (warm ? 0.55 : 0.2)) {
+    const lx = rnd2() < 0.5 ? l.x - bL : l.x + l.dw + bL;
+    const ly = l.y + rnd2() * l.dh;
+    const g = ctx.createRadialGradient(lx, ly, 0, lx, ly, L * (warm ? 0.10 + rnd2() * 0.14 : 0.06 + rnd2() * 0.1));
+    g.addColorStop(0, warm ? 'rgba(240,160,50,0.34)' : 'rgba(230,120,40,0.25)');
+    g.addColorStop(1, 'rgba(230,120,40,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, l.cw, l.ch);
+  }
+  ctx.restore();
+
+  const a2 = (rnd() - 0.5) * 0.7 * Math.PI / 180;
+  const mw = l.dw + bL + bR, mh = l.dh + bT + bB;
+  const mcx = l.x - bL + mw / 2 + (rnd() - 0.5) * b0 * 0.3;
+  const mcy = l.y - bT + mh / 2 + (rnd() - 0.5) * b0 * 0.3;
+  const maskSub = () => {
+    ctx.save(); ctx.translate(mcx, mcy); ctx.rotate(a2);
+    wsub(ctx, mw, mh, b0 * 0.7, b0 * 0.15, rng(seed + 4), 11);
+    ctx.restore();
+  };
+  ctx.beginPath();
+  ctx.rect(0, 0, l.cw, l.ch);
+  maskSub();
+  ctx.fillStyle = state.color;
+  ctx.fill('evenodd');
+  ctx.save();
+  ctx.beginPath(); maskSub(); ctx.clip();
+  ctx.filter = `blur(${b0 * 0.15 * scale}px)`;
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  ctx.lineWidth = b0 * 0.22;
+  ctx.beginPath(); maskSub(); ctx.stroke();
+  ctx.restore();
+}
+
+function drawComposition(ctx, img, l, scale) {
   ctx.save();
   ctx.scale(scale, scale);
   ctx.fillStyle = state.color;
@@ -728,11 +970,12 @@ function drawComposition(ctx, bitmap, l, scale) {
     ctx.translate(l.x + l.dw / 2, l.y + l.dh / 2);
     ctx.rotate(l.rot * Math.PI / 180);
     ctx.scale(l.f, l.f);
-    ctx.drawImage(bitmap, -l.ucx, -l.ucy);
+    ctx.drawImage(img.bitmap, -l.ucx, -l.ucy);
     ctx.restore();
   } else {
-    ctx.drawImage(bitmap, l.sx, l.sy, l.sw, l.sh, l.x, l.y, l.dw, l.dh);
+    ctx.drawImage(img.bitmap, l.sx, l.sy, l.sw, l.sh, l.x, l.y, l.dw, l.dh);
   }
+  if (state.frame === 'film') drawFilmFrame(ctx, l, BLESSED_FRAMES[img.frameIdx], scale);
   ctx.restore();
 }
 
@@ -880,7 +1123,7 @@ function renderSinglePreview() {
   const scale = Math.min(1, maxSide / Math.max(l.cw, l.ch));
   preview.width = Math.round(l.cw * scale);
   preview.height = Math.round(l.ch * scale);
-  drawComposition(pctx, img.bitmap, l, scale);
+  drawComposition(pctx, img, l, scale);
   preview.style.cursor = 'grab';
 
   const trim = l.trimW > 0 ? `, trims ${l.trimW} px width`
@@ -915,7 +1158,7 @@ async function renderBlob(draw, w, h, type) {
 function exportBlob(img) {
   const l = layoutFor(img);
   const type = state.format === 'png' ? 'image/png' : 'image/jpeg';
-  return renderBlob((ctx, scale) => drawComposition(ctx, img.bitmap, l, scale), l.cw, l.ch, type);
+  return renderBlob((ctx, scale) => drawComposition(ctx, img, l, scale), l.cw, l.ch, type);
 }
 
 function outName(img) {
@@ -1045,6 +1288,7 @@ async function addFiles(fileList) {
     try {
       const bitmap = await decode(file);
       state.images.push({ bitmap, name: file.name, thumbUrl: URL.createObjectURL(file),
+                          frameIdx: hashSeed(file.name, file.size) % BLESSED_FRAMES.length,
                           adj: { zoom: 1, dx: 0, dy: 0, rot: 0 },
                           cadj: { zoom: 1, dx: 0, dy: 0, rot: 0 } });
     } catch {
@@ -1184,6 +1428,10 @@ function updateControlStates() {
   $('rotRow').hidden = false;
   $('resetFraming').hidden = false;
   $('framingLabel').textContent = single ? 'position' : 'frame';
+  $('frameRow').hidden = !single;
+  $('reroll').hidden = !single || state.frame === 'clean';
+  document.querySelectorAll('#frameRow button').forEach((b) =>
+    b.setAttribute('aria-pressed', b.dataset.frame === state.frame));
   document.querySelectorAll('#tplRow button').forEach((b) =>
     b.setAttribute('aria-pressed', b.dataset.tpl === state.template));
   $('downloadAll').hidden = !single || state.images.length < 2;
@@ -1224,6 +1472,26 @@ function setFit(fit) {
 }
 $('fitBtn').addEventListener('click', () => setFit('fit'));
 $('fillBtn').addEventListener('click', () => setFit('fill'));
+
+function setFrame(f) {
+  state.frame = f;
+  if (f === 'film' && state.borderPct < 5) {    // the frame needs room to breathe
+    state.borderPct = 8;
+    $('borderPct').value = 8;
+    $('borderVal').textContent = '8%';
+  }
+  updateControlStates();
+  renderPreview();
+}
+document.querySelectorAll('#frameRow button').forEach((b) =>
+  b.addEventListener('click', () => setFrame(b.dataset.frame)));
+
+$('reroll').addEventListener('click', () => {
+  const img = state.images[state.current];
+  if (!img) return;
+  img.frameIdx = (img.frameIdx + 1) % BLESSED_FRAMES.length;
+  renderPreview();
+});
 
 /* ---------- framing: zoom, drag-to-pan, reset (per photo/slot) ---------- */
 function activeAdj() {
@@ -1409,7 +1677,7 @@ $('infoToggle').addEventListener('click', () => {
   $('infoToggle').setAttribute('aria-pressed', on);
 });
 
-window.brink = { state, MODES, TEMPLATES };   // test hook, see test.html
+window.brink = { state, MODES, TEMPLATES, BLESSED_FRAMES };   // test hook, see test.html
 
 /* ---------- drop zone / file input ---------- */
 const drop = $('drop');
