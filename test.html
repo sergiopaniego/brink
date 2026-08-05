@@ -622,6 +622,18 @@ test('the canvas pipeline matches the browser color space', async () => {
   eq(B.CANVAS_SPACE, CS, 'app and tests agree on the working space');
 });
 
+test('the toolbar hints at hidden tools until you scroll it', async () => {
+  const { doc } = await freshAppAt(430, await photo(400, 600, 'a.jpg'));
+  const hint = doc.getElementById('toolsHint');
+  ok(hint.offsetParent !== null, 'hint visible on a fresh crowded toolbar');
+  const tools = doc.getElementById('tools');
+  tools.scrollLeft = 40;
+  tools.dispatchEvent(new Event('scroll'));
+  ok(hint.offsetParent === null, 'gone after the first scroll');
+  doc.defaultView.updateControlStates();
+  ok(hint.offsetParent === null, 'and it stays gone');
+});
+
 test('the pwa manifest and icons are wired', async () => {
   const { doc } = await freshApp();
   ok(doc.querySelector('link[rel="manifest"]'), 'manifest linked');
