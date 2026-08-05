@@ -23,6 +23,12 @@
 }
 </script>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='10' fill='%23f4f1ea'/><rect x='15' y='11' width='34' height='42' fill='%2317191c'/></svg>">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#17191c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="brink">
 <style>
   :root {
     --ink: #17191c;        /* light-table surface */
@@ -535,6 +541,14 @@
       <button class="reset-btn" id="reroll" hidden>another frame</button>
     </section>
 
+    <section data-tab="border">
+      <div class="group-label">Grain</div>
+      <div class="slider-row">
+        <input type="range" id="grain" min="0" max="100" step="5" value="0" aria-label="Film grain amount">
+        <span class="slider-val" id="grainVal">off</span>
+      </div>
+    </section>
+
     <section data-tab="frame">
       <div class="group-label" id="framingLabel">Position</div>
       <div class="align-grid" role="group" aria-label="Photo position on the canvas" id="alignGrid">
@@ -781,6 +795,42 @@ function wsub(ctx, w, h, r, amp, rnd, step) {
   ctx.closePath();
 }
 
+/* ---------- film grain ----------
+   a seeded monochrome noise tile per photo, overlay blended over the photo
+   window only. speck size tracks resolution so 12 and 48 mp look the same. */
+function grainTile(seed) {
+  const size = 256;
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  const ctx = c.getContext('2d');
+  const id = ctx.createImageData(size, size);
+  const rnd = rng(seed);
+  for (let i = 0; i < id.data.length; i += 4) {
+    const v = 128 + (rnd() + rnd() + rnd() - 1.5) * 84;
+    id.data[i] = id.data[i + 1] = id.data[i + 2] = v;
+    id.data[i + 3] = 255;
+  }
+  ctx.putImageData(id, 0, 0);
+  return c;
+}
+
+function drawGrain(ctx, img, x, y, w, h) {
+  if (!img.grain) return;
+  if (!img.grainCanvas) img.grainCanvas = grainTile(hashSeed(img.name, img.bitmap.width));
+  const g = Math.max(1, Math.max(w, h) / 1400);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  ctx.globalCompositeOperation = 'overlay';
+  ctx.globalAlpha = img.grain / 100 * 0.5;
+  ctx.translate(x, y);
+  ctx.scale(g, g);
+  ctx.fillStyle = ctx.createPattern(img.grainCanvas, 'repeat');
+  ctx.fillRect(0, 0, w / g, h / g);
+  ctx.restore();
+}
+
 // draws the frame around the photo window of layout l; ctx is already scaled
 function drawFilmFrame(ctx, l, label, scale) {
   const warm = label >= 1000;                   // warm curation round labels
@@ -976,6 +1026,7 @@ function drawComposition(ctx, img, l, scale) {
   } else {
     ctx.drawImage(img.bitmap, l.sx, l.sy, l.sw, l.sh, l.x, l.y, l.dw, l.dh);
   }
+  drawGrain(ctx, img, l.x, l.y, l.dw, l.dh);
   if (state.frame === 'film') drawFilmFrame(ctx, l, BLESSED_FRAMES[img.frameIdx], scale);
   ctx.restore();
 }
@@ -1057,6 +1108,7 @@ function drawCollagePhotos(ctx, c) {
     } else {
       ctx.drawImage(img.bitmap, l.sx, l.sy, l.sw, l.sh, rx, ry, rw, rh);
     }
+    drawGrain(ctx, img, rx, ry, rw, rh);
   });
 }
 
@@ -1141,9 +1193,10 @@ function renderSinglePreview() {
              : l.trimH > 0 ? `, trims ${l.trimH} px height` : '';
   const zoom = l.z > 1 ? `, zoom x${l.z.toFixed(2)}` : '';
   const rot = l.rot ? `, rot ${+l.rot.toFixed(1)}°` : '';
+  const grain = img.grain ? `, grain ${img.grain}%` : '';
   const resampled = l.z > 1 || l.rot ? ' (resampled)' : '';
   $('readout').innerHTML =
-    `${l.cw} x ${l.ch} px <span class="dim2">photo ${l.dw} x ${l.dh}, border ${l.m} px${trim}${zoom}${rot}${resampled}</span>`;
+    `${l.cw} x ${l.ch} px <span class="dim2">photo ${l.dw} x ${l.dh}, border ${l.m} px${trim}${zoom}${rot}${grain}${resampled}</span>`;
 }
 
 /* ---------- export ---------- */
@@ -1300,6 +1353,7 @@ async function addFiles(fileList) {
       const bitmap = await decode(file);
       state.images.push({ bitmap, name: file.name, thumbUrl: URL.createObjectURL(file),
                           frameIdx: hashSeed(file.name, file.size) % BLESSED_FRAMES.length,
+                          grain: 0,
                           adj: { zoom: 1, dx: 0, dy: 0, rot: 0 },
                           cadj: { zoom: 1, dx: 0, dy: 0, rot: 0 } });
     } catch {
@@ -1505,9 +1559,15 @@ $('reroll').addEventListener('click', () => {
 });
 
 /* ---------- framing: zoom, drag-to-pan, reset (per photo/slot) ---------- */
+function activeImg() {
+  if (state.workspace === 'collage') return state.slotMap[state.slot] ?? null;
+  return state.images[state.current] ?? null;
+}
+
 function activeAdj() {
-  if (state.workspace === 'collage') return state.slotMap[state.slot]?.cadj ?? null;
-  return state.images[state.current]?.adj ?? null;
+  const img = activeImg();
+  if (!img) return null;
+  return state.workspace === 'collage' ? img.cadj : img.adj;
 }
 
 function syncFramingUI() {
@@ -1518,6 +1578,9 @@ function syncFramingUI() {
   $('zoomVal').textContent = `x${z.toFixed(2)}`;
   $('rot').value = r;
   $('rotVal').textContent = `${+r.toFixed(1)}°`;
+  const g = activeImg()?.grain ?? 0;
+  $('grain').value = g;
+  $('grainVal').textContent = g ? `${g}%` : 'off';
 }
 
 $('zoom').addEventListener('input', (e) => {
@@ -1699,6 +1762,22 @@ function setFormat(fmt) {
 }
 $('fmtJpeg').addEventListener('click', () => setFormat('jpeg'));
 $('fmtPng').addEventListener('click', () => setFormat('png'));
+
+$('grain').addEventListener('input', (e) => {
+  const img = activeImg();
+  if (!img) return;
+  img.grain = parseInt(e.target.value, 10);
+  $('grainVal').textContent = img.grain ? `${img.grain}%` : 'off';
+  renderPreview();
+});
+
+$('grainVal').addEventListener('click', () => {
+  const img = activeImg();
+  if (!img) return;
+  img.grain = 0;
+  syncFramingUI();
+  renderPreview();
+});
 
 $('bgToggle').addEventListener('click', () => $('table').classList.toggle('light'));
 

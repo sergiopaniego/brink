@@ -505,6 +505,62 @@ test('frame styles live in singles only', async () => {
   ok(vis('frameRow'), 'restored in singles');
 });
 
+test('grain is per photo, deterministic, and confined to the photo', async () => {
+  const { win, doc, B } = await freshApp(await photo(400, 600, 'a.jpg'));
+  B.state.format = 'png';
+  B.state.mode = 'original';
+  const img = B.state.images[0];
+  const bytes = async () => new Uint8Array(await (await win.exportBlob(img)).arrayBuffer());
+  const clean = await bytes();
+  const slider = doc.getElementById('grain');
+  slider.value = 60;
+  slider.dispatchEvent(new Event('input', { bubbles: true }));
+  eq(img.grain, 60, 'slider edits the current photo');
+  const grained = await bytes();
+  ok(clean.length !== grained.length || !clean.every((v, i) => v === grained[i]), 'grain changes the export');
+  const again = await bytes();
+  ok(grained.length === again.length && grained.every((v, i) => v === again[i]), 'same grain twice, identical bytes');
+  const bmp = await createImageBitmap(await win.exportBlob(img));
+  const c = document.createElement('canvas');
+  c.width = bmp.width; c.height = bmp.height;
+  const x = c.getContext('2d');
+  x.drawImage(bmp, 0, 0);
+  const px = x.getImageData(3, 3, 1, 1).data;
+  ok(px[0] === 255 && px[1] === 255 && px[2] === 255, 'border stays clean white');
+  doc.getElementById('grainVal').click();
+  eq(img.grain, 0, 'tapping the value turns grain off for this photo');
+});
+
+test('in a collage each cell keeps its own grain', async () => {
+  const { doc, B } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'));
+  doc.getElementById('wsCollage').click();
+  B.state.slot = 0;
+  const slider = doc.getElementById('grain');
+  slider.value = 50;
+  slider.dispatchEvent(new Event('input', { bubbles: true }));
+  eq(B.state.slotMap[0].grain, 50, 'selected cell got the grain');
+  eq(B.state.slotMap[1].grain, 0, 'the other cell stays clean');
+  // selecting the other cell syncs the slider back
+  B.state.slot = 1;
+  doc.defaultView.syncFramingUI();
+  eq(doc.getElementById('grainVal').textContent, 'off', 'slider follows the selection');
+});
+
+test('the pwa manifest and icons are wired', async () => {
+  const { doc } = await freshApp();
+  ok(doc.querySelector('link[rel="manifest"]'), 'manifest linked');
+  ok(doc.querySelector('link[rel="apple-touch-icon"]'), 'apple touch icon linked');
+  ok(doc.querySelector('meta[name="theme-color"]'), 'theme color set');
+  const res = await fetch('manifest.json');
+  const m = await res.json();
+  eq(m.display, 'standalone', 'standalone display');
+  eq(m.icons.length, 2, 'two manifest icons');
+  for (const icon of m.icons) {
+    const r = await fetch(icon.src);
+    ok(r.ok, `${icon.src} exists`);
+  }
+});
+
 /* ---------- interface state ---------- */
 
 test('controls show only what applies in each workspace', async () => {
