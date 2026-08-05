@@ -566,6 +566,7 @@
         <button data-tpl="3h" aria-pressed="false">3×1</button>
         <button data-tpl="4g" aria-pressed="false">2×2</button>
         <button data-tpl="2f" aria-pressed="false">side</button>
+        <button data-tpl="ov" aria-pressed="false">over</button>
       </div>
     </section>
 
@@ -1185,6 +1186,11 @@ const TEMPLATES = {
   '4g': { n: 4, rects: (W, H, m) => { const w = (W - 3 * m) / 2, h = (H - 3 * m) / 2;
           return [[m, m, w, h], [2 * m + w, m, w, h], [m, 2 * m + h, w, h], [2 * m + w, 2 * m + h, w, h]]; } },
   '2f': { n: 2, fitRow: true },   // side by side, natural aspect, centered, no crop
+  'ov': { n: 2, rects: (W, H, m) => {             // a square inset floating over a full bleed photo
+    const side = Math.min(W, H) * 0.36;
+    return [[m, m, W - 2 * m, H - 2 * m],
+            [(W - side) / 2, (H - side) / 2, side, side]];
+  } },
 };
 
 // equal height row, vertically centered, padded to the target ratio
@@ -2095,8 +2101,10 @@ preview.addEventListener('pointerdown', (e) => {
       const rect = preview.getBoundingClientRect();
       const k = c.W / rect.width;
       const px = (e.clientX - rect.left) * k, py = (e.clientY - rect.top) * k;
-      const hit = c.rects.findIndex(([x, y, w, h]) =>
-        px >= x && px <= x + w && py >= y && py <= y + h);
+      let hit = -1;
+      c.rects.forEach(([x, y, w, h], idx) => {    // last match wins: cells can overlap
+        if (px >= x && px <= x + w && py >= y && py <= y + h) hit = idx;
+      });
       if (hit >= 0 && hit !== state.slot) { state.slot = hit; syncFramingUI(); renderPreview(); }
     }
   } else {

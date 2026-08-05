@@ -703,6 +703,28 @@ test('side by side collage keeps natural aspects, equal heights, centered', asyn
   eq(r1[1], Math.round((c.H - r1[3]) / 2), 'row centered in the canvas');
 });
 
+test('over template floats a square inset above a full bleed photo', async () => {
+  const { win, doc, B } = await freshApp(await photo(800, 1200, 'a.jpg'), await photo(1200, 800, 'b.jpg'));
+  doc.getElementById('wsCollage').click();
+  doc.querySelector('#tplRow button[data-tpl="ov"]').click();
+  const c = win.computeCollage();
+  close(c.W / c.H, 4 / 5, 0.01, 'canvas ratio');
+  const [bg, inset] = c.rects;
+  eq(bg[0], c.m, 'background starts at the border');
+  eq(bg[2], c.W - 2 * c.m, 'background spans the full width');
+  eq(inset[2], inset[3], 'inset is square');
+  close(inset[0] + inset[2] / 2, c.W / 2, 2, 'inset centered horizontally');
+  close(inset[1] + inset[3] / 2, c.H / 2, 2, 'inset centered vertically too');
+  // tapping the middle of the inset selects the inset, not the background under it
+  const pv = doc.getElementById('preview');
+  const r = pv.getBoundingClientRect();
+  const sx = r.left + (inset[0] + inset[2] / 2) / c.W * r.width;
+  const sy = r.top + (inset[1] + inset[3] / 2) / c.H * r.height;
+  pev(win, pv, 'pointerdown', 3, sx, sy);
+  pev(win, pv, 'pointerup', 3, sx, sy);
+  eq(B.state.slot, 1, 'topmost cell wins the tap');
+});
+
 test('split cuts one photo into aligned sequential posts', async () => {
   const { win, doc, B } = await freshApp(await photo(1200, 800, 'a.jpg'));
   B.state.format = 'png';
