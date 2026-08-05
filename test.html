@@ -597,7 +597,7 @@ test('mat and film are exclusive, hidden tools collapse the panel', async () => 
 test('the mobile toolbar scrolls its tools and pins save', async () => {
   const { doc } = await freshAppAt(430, await photo(400, 600, 'a.jpg'));
   const tools = [...doc.querySelectorAll('#tools button')].map((b) => b.dataset.tool);
-  eq(tools.join(','), 'format,border,frame,color,film,grain,mat', 'one tool per control');
+  eq(tools.join(','), 'format,border,frame,color,film,grain,mat,split', 'one tool per control');
   ok(doc.getElementById('saveTab').offsetParent !== null, 'save pinned outside the scroll');
   doc.querySelector('#tools button[data-tool="grain"]').click();
   ok(doc.getElementById('grain').offsetParent !== null, 'grain tab shows the grain slider');
@@ -649,6 +649,106 @@ test('the pwa manifest and icons are wired', async () => {
   }
   const sw = await fetch('sw.js');
   ok(sw.ok, 'service worker file exists');
+});
+
+test('every photo keeps its own settings when you switch', async () => {
+  const { win, doc, B } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'));
+  // editing b (the selected one): border and mode
+  const border = doc.getElementById('borderPct');
+  border.value = 8;
+  border.dispatchEvent(new Event('input', { bubbles: true }));
+  doc.querySelector('input[name="mode"][value="square"]').click();
+  // switch to a: untouched defaults
+  doc.querySelectorAll('.thumb')[0].click();
+  eq(B.state.borderPct, 2, 'a keeps its own border');
+  eq(B.state.mode, 'post', 'a keeps its own mode');
+  // edit a differently, then bounce back and forth
+  doc.querySelector('input[name="mode"][value="wide"]').click();
+  doc.querySelectorAll('.thumb')[1].click();
+  eq(B.state.mode, 'square', 'b remembered square');
+  eq(B.state.borderPct, 8, 'b remembered its border');
+  doc.querySelectorAll('.thumb')[0].click();
+  eq(B.state.mode, 'wide', 'a remembered wide');
+  // exports use each photo's own kit
+  const la = win.layoutFor(B.state.images[0]);
+  close(la.cw / la.ch, 1.91, 0.01, 'live layout follows the selected photo');
+});
+
+test('save all exports each photo with its own settings', async () => {
+  const { win, doc, B } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(400, 600, 'b.jpg'));
+  // b selected: square. switch to a: post stays
+  doc.querySelector('input[name="mode"][value="square"]').click();
+  doc.querySelectorAll('.thumb')[0].click();
+  const filesA = await win.exportFiles(B.state.images[0]);
+  const filesB = await win.exportFiles(B.state.images[1]);
+  ok(filesA[0].name.endsWith('-4x5.jpg'), 'a exports as post');
+  ok(filesB[0].name.endsWith('-1x1.jpg'), 'b exports as square');
+  const bmpB = await createImageBitmap(filesB[0]);
+  eq(bmpB.width, bmpB.height, 'b is really square');
+  eq(B.state.mode, 'post', 'live state restored after exporting b');
+});
+
+test('side by side collage keeps natural aspects, equal heights, centered', async () => {
+  const { win, doc, B } = await freshApp(await photo(800, 1200, 'a.jpg'), await photo(1200, 800, 'b.jpg'));
+  doc.getElementById('wsCollage').click();
+  doc.querySelector('#tplRow button[data-tpl="2f"]').click();
+  const c = win.computeCollage();
+  close(c.W / c.H, 4 / 5, 0.01, 'canvas ratio');
+  const [r1, r2] = c.rects;
+  eq(r1[3], r2[3], 'equal heights');
+  eq(r1[1], r2[1], 'same top, vertically centered together');
+  close(r1[2] / r1[3], 800 / 1200, 0.01, 'first keeps its aspect');
+  close(r2[2] / r2[3], 1200 / 800, 0.01, 'second keeps its aspect');
+  ok(r1[3] <= 800, 'no photo upscaled');
+  eq(r1[1], Math.round((c.H - r1[3]) / 2), 'row centered in the canvas');
+});
+
+test('split cuts one photo into aligned sequential posts', async () => {
+  const { win, doc, B } = await freshApp(await photo(1200, 800, 'a.jpg'));
+  B.state.format = 'png';
+  doc.querySelector('#splitRow button[data-split="2"]').click();
+  const l = win.layoutFor(B.state.images[0]);
+  eq(l.cw % 2, 0, 'width divisible by the panel count');
+  close((l.cw / 2) / l.ch, 4 / 5, 0.01, 'each panel is a 4:5 post');
+  const files = await win.exportFiles(B.state.images[0]);
+  eq(files.length, 2, 'two files');
+  ok(files[0].name.endsWith('-4x5-1of2.png') && files[1].name.endsWith('-4x5-2of2.png'), 'sequential names');
+  const p1 = await createImageBitmap(files[0]);
+  const p2 = await createImageBitmap(files[1]);
+  eq(p1.width, p2.width, 'panels same width');
+  eq(p1.height, p2.height, 'panels same height');
+  // seam continuity: last column of panel 1 equals the photo, first of panel 2 continues it
+  const cA = document.createElement('canvas'); cA.width = p1.width; cA.height = p1.height;
+  const xA = cA.getContext('2d', { colorSpace: CS }); xA.drawImage(p1, 0, 0);
+  const cB = document.createElement('canvas'); cB.width = p2.width; cB.height = p2.height;
+  const xB = cB.getContext('2d', { colorSpace: CS }); xB.drawImage(p2, 0, 0);
+  const a = xA.getImageData(p1.width - 1, Math.round(p1.height / 2), 1, 1).data;
+  const b = xB.getImageData(0, Math.round(p2.height / 2), 1, 1).data;
+  for (let i = 0; i < 3; i++) ok(Math.abs(a[i] - b[i]) <= 2, `seam channel ${i}: ${a[i]} vs ${b[i]}`);
+  ok(doc.getElementById('readout').textContent.includes('2 posts'), 'readout says 2 posts');
+});
+
+test('undo and redo walk the edit history', async () => {
+  const { doc, B } = await freshApp(await photo(400, 600, 'a.jpg'));
+  const vis = (id) => doc.getElementById(id).offsetParent !== null;
+  ok(!vis('undoBtn') && !vis('redoBtn'), 'no history buttons before edits');
+  const border = doc.getElementById('borderPct');
+  border.value = 6;
+  border.dispatchEvent(new Event('input', { bubbles: true }));
+  border.value = 7;
+  border.dispatchEvent(new Event('input', { bubbles: true }));   // merges into one step
+  doc.querySelector('input[name="mode"][value="square"]').click();
+  ok(vis('undoBtn'), 'undo appears');
+  doc.getElementById('undoBtn').click();
+  eq(B.state.mode, 'post', 'undo reverted the mode');
+  eq(B.state.borderPct, 7, 'border edit intact');
+  doc.getElementById('undoBtn').click();
+  eq(B.state.borderPct, 2, 'slider drag undone as one step');
+  ok(vis('redoBtn'), 'redo appears');
+  doc.getElementById('redoBtn').click();
+  eq(B.state.borderPct, 7, 'redo restores the border');
+  doc.getElementById('redoBtn').click();
+  eq(B.state.mode, 'square', 'redo restores the mode');
 });
 
 /* ---------- interface state ---------- */

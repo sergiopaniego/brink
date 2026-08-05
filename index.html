@@ -252,6 +252,23 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  #undoBtn, #redoBtn {
+    position: absolute;
+    top: 12px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 1px solid var(--panel-edge);
+    background: none;
+    color: var(--muted);
+    font: 14px var(--mono);
+    cursor: pointer;
+    padding: 0;
+    z-index: 3;
+  }
+  #undoBtn { left: 14px; }
+  #redoBtn { left: 44px; }
+  #undoBtn:hover, #redoBtn:hover { color: var(--amber); }
+  #undoBtn:focus-visible, #redoBtn:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
   #infoToggle {
     position: absolute;
     top: 12px; right: 44px;
@@ -426,6 +443,7 @@
     aside[data-tool="film"]   > [data-tab="film"],
     aside[data-tool="grain"]  > [data-tab="grain"],
     aside[data-tool="mat"]    > [data-tab="mat"],
+    aside[data-tool="split"]  > [data-tab="split"],
     aside[data-tool="save"]   > section[data-tab="save"] { display: block; }
     aside[data-tool="save"]   > .actions { display: flex; flex-direction: row; margin: 12px 0 0; }
     .group-label { display: none; }
@@ -547,6 +565,7 @@
         <button data-tpl="2v" aria-pressed="false">1×2</button>
         <button data-tpl="3h" aria-pressed="false">3×1</button>
         <button data-tpl="4g" aria-pressed="false">2×2</button>
+        <button data-tpl="2f" aria-pressed="false">side</button>
       </div>
     </section>
 
@@ -594,6 +613,15 @@
       <div class="slider-row">
         <input type="range" id="grain" min="0" max="100" step="5" value="0" aria-label="Film grain amount">
         <span class="slider-val" id="grainVal">off</span>
+      </div>
+    </section>
+
+    <section data-tab="split" id="splitSection">
+      <div class="group-label">Split</div>
+      <div class="format-row" id="splitRow">
+        <button data-split="1" aria-pressed="true">1 post</button>
+        <button data-split="2" aria-pressed="false">2 posts</button>
+        <button data-split="3" aria-pressed="false">3 posts</button>
       </div>
     </section>
 
@@ -655,6 +683,8 @@
   </aside>
 
   <div class="table" id="table">
+    <button id="undoBtn" aria-label="undo" hidden>‹</button>
+    <button id="redoBtn" aria-label="redo" hidden>›</button>
     <button id="infoToggle" aria-label="output size details" aria-pressed="false">i</button>
     <button id="bgToggle" aria-label="preview on a light background"></button>
     <div class="readout" id="readout"></div>
@@ -684,6 +714,7 @@
     <button data-tool="film" aria-pressed="false">film</button>
     <button data-tool="grain" aria-pressed="false">grain</button>
     <button data-tool="mat" aria-pressed="false">mat</button>
+    <button data-tool="split" aria-pressed="false">split</button>
   </div>
   <div id="toolsHint" hidden><span>›</span></div>
   </div>
@@ -707,6 +738,24 @@ const MODES = {
 // curated by hand from the frame generator, each number is a full frame recipe
 const BLESSED_FRAMES = [1, 2, 4, 5, 6, 7, 9, 10, 11, 12, 13, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 30, 34, 36, 40, 44, 45];
 
+let imgSeq = 0;
+
+// every photo keeps its own full set of edit settings; the state object is
+// just the live working copy for whichever photo is selected
+const PER_IMG = ['mode', 'fit', 'borderPct', 'alignH', 'alignV', 'color', 'mat', 'matColor', 'frame', 'split'];
+
+function storeSettings(img) {
+  if (!img) return;
+  img.set = {};
+  for (const k of PER_IMG) img.set[k] = state[k];
+}
+
+function loadSettings(img) {
+  if (!img) return;
+  if (!img.set) { storeSettings(img); return; }
+  for (const k of PER_IMG) state[k] = img.set[k];
+}
+
 const state = {
   images: [],          // { bitmap, name, thumbUrl, adj, cadj }
   current: -1,
@@ -715,6 +764,7 @@ const state = {
   slot: 0,             // selected collage slot
   slotMap: [],         // per-slot image ref or null (empty cell)
   mode: 'post',
+  split: 1,            // cut the composition into n sequential posts
   fit: 'fit',          // 'fit' pads with border color, 'fill' crops to the ratio
   frame: 'clean',      // 'clean' | 'film', a generated frame from the curated seed set
   borderPct: 2,
@@ -754,7 +804,8 @@ const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
 function layoutFor(img) {
   const iw = img.bitmap.width, ih = img.bitmap.height;
   const m = Math.round((state.borderPct / 100) * Math.max(iw, ih));
-  const ratio = MODES[state.mode].ratio;
+  const split = state.workspace === 'singles' && MODES[state.mode].ratio !== null ? state.split : 1;
+  const ratio = MODES[state.mode].ratio === null ? null : MODES[state.mode].ratio * split;
 
   if (state.fit === 'fill' && ratio !== null) {
     let dw = iw, dh = ih;                       // drawn size on the canvas
@@ -781,8 +832,10 @@ function layoutFor(img) {
     const cy = clamp(baseY + sh / 2 + img.adj.dy, hy, Math.max(hy, ih - hy));
     img.adj.dx = cx - (baseX + sw / 2);         // keep offsets within bounds
     img.adj.dy = cy - (baseY + sh / 2);
-    return { cw: dw + 2 * m, ch: dh + 2 * m, x: m, y: m,
-             sx: cx - sw / 2, sy: cy - sh / 2, sw, sh, dw, dh, m, z,
+    let cwF = dw + 2 * m;
+    cwF -= cwF % split;                          // panels must cut on integer pixels
+    return { cw: cwF, ch: dh + 2 * m, x: Math.round((cwF - dw) / 2), y: m,
+             sx: cx - sw / 2, sy: cy - sh / 2, sw, sh, dw, dh, m, z, split,
              rot, f, ucx: cx, ucy: cy,
              trimW: Math.round(iw - sw), trimH: Math.round(ih - sh) };
   }
@@ -792,6 +845,7 @@ function layoutFor(img) {
   if (ratio !== null) {
     if (innerW / innerH < ratio) cw = Math.round(innerH * ratio);
     else ch = Math.round(innerW / ratio);
+    cw += (split - cw % split) % split;          // panels must cut on integer pixels
   }
   const x = state.alignH === 'left' ? m
           : state.alignH === 'right' ? cw - iw - m
@@ -815,7 +869,7 @@ function layoutFor(img) {
     img.adj.dy = cy - ih / 2;
   }
   return { cw, ch, x, y, sx: cx - sw / 2, sy: cy - sh / 2, sw, sh, dw: iw, dh: ih,
-           m, z, rot, f, ucx: cx, ucy: cy,
+           m, z, rot, f, ucx: cx, ucy: cy, split,
            trimW: Math.round(iw - sw), trimH: Math.round(ih - sh) };
 }
 
@@ -1130,7 +1184,36 @@ const TEMPLATES = {
           return [[m, m, w, h], [2 * m + w, m, w, h], [3 * m + 2 * w, m, w, h]]; } },
   '4g': { n: 4, rects: (W, H, m) => { const w = (W - 3 * m) / 2, h = (H - 3 * m) / 2;
           return [[m, m, w, h], [2 * m + w, m, w, h], [m, 2 * m + h, w, h], [2 * m + w, 2 * m + h, w, h]]; } },
+  '2f': { n: 2, fitRow: true },   // side by side, natural aspect, centered, no crop
 };
+
+// equal height row, vertically centered, padded to the target ratio
+function computeFitRow(imgs, ratio) {
+  const present = imgs.filter(Boolean);
+  const h = present.length ? Math.min(...present.map((im) => im.bitmap.height)) : 1000;
+  const widths = imgs.map((im) => (im ? h * im.bitmap.width / im.bitmap.height : 0));
+  const pct = state.borderPct / 100;
+  let W = 0, H = 0, m = 0;
+  for (let pass = 0; pass < 2; pass++) {          // margins depend on the final size
+    const cw0 = widths.reduce((a, b) => a + b, 0) + m * (present.length + 1);
+    const ch0 = h + 2 * m;
+    W = cw0; H = ch0;
+    if (W / H < ratio) W = ch0 * ratio; else H = cw0 / ratio;
+    m = pct * Math.max(W, H);
+  }
+  W = Math.round(W); H = Math.round(H); m = Math.round(m);
+  const totalW = widths.reduce((a, b) => a + b, 0) + m * (present.length - 1);
+  let x = Math.round((W - totalW) / 2);
+  const y = Math.round((H - h) / 2);
+  const rects = imgs.map((im, i) => {
+    if (!im) return [0, 0, 0, 0];
+    const w = Math.round(widths[i]);
+    const r = [x, y, w, Math.round(h)];
+    x += w + m;
+    return r;
+  });
+  return { W, H, m, rects, imgs };
+}
 
 function initSlotMap() {
   const n = TEMPLATES[state.template].n;
@@ -1143,6 +1226,7 @@ function computeCollage() {
   if (state.slotMap.length !== t.n) initSlotMap();
   const imgs = state.slotMap;
   const ratio = MODES[state.mode].ratio ?? 4 / 5;
+  if (t.fitRow) return computeFitRow(imgs, ratio);
   const H0 = 1000, W0 = ratio * H0, m0 = (state.borderPct / 100) * Math.max(W0, H0);
   const rects0 = t.rects(W0, H0, m0);
   let k = 0;
@@ -1276,6 +1360,19 @@ function renderSinglePreview() {
   preview.width = Math.round(l.cw * scale);
   preview.height = Math.round(l.ch * scale);
   drawComposition(pctx, img, l, scale);
+  if (l.split > 1) {
+    pctx.strokeStyle = 'rgba(224,164,88,0.9)';   // cut guides, preview only
+    pctx.setLineDash([6, 5]);
+    pctx.lineWidth = 1;
+    for (let k = 1; k < l.split; k++) {
+      const gx = Math.round(k * (l.cw / l.split) * scale) + 0.5;
+      pctx.beginPath();
+      pctx.moveTo(gx, 0);
+      pctx.lineTo(gx, preview.height);
+      pctx.stroke();
+    }
+    pctx.setLineDash([]);
+  }
   preview.style.cursor = 'grab';
 
   const trim = l.trimW > 0 ? `, trims ${l.trimW} px width`
@@ -1285,8 +1382,11 @@ function renderSinglePreview() {
   const grain = img.grain ? `, grain ${img.grain}%` : '';
   const mat = state.mat && state.frame !== 'film' ? `, mat ${state.mat}%` : '';
   const resampled = l.z > 1 || l.rot ? ' (resampled)' : '';
+  const head = l.split > 1
+    ? `${l.split} posts, ${l.cw / l.split} x ${l.ch} px each`
+    : `${l.cw} x ${l.ch} px`;
   $('readout').innerHTML =
-    `${l.cw} x ${l.ch} px <span class="dim2">photo ${l.dw} x ${l.dh}, border ${l.m} px${trim}${zoom}${rot}${grain}${mat}${resampled}</span>`;
+    `${head} <span class="dim2">photo ${l.dw} x ${l.dh}, border ${l.m} px${trim}${zoom}${rot}${grain}${mat}${resampled}</span>`;
 }
 
 /* ---------- export ---------- */
@@ -1332,6 +1432,42 @@ async function saveBlob(blob, filename) {
 async function exportFile(img) {
   const blob = await exportBlob(img);
   return new File([blob], outName(img), { type: blob.type });
+}
+
+// exports honor each photo's own settings, whichever photo is on screen
+async function exportFiles(img) {
+  const cur = state.images[state.current];
+  storeSettings(cur);
+  if (img === cur) return buildFiles(img);
+  const backup = {};
+  for (const k of PER_IMG) backup[k] = state[k];
+  loadSettings(img);
+  try {
+    return await buildFiles(img);
+  } finally {
+    for (const k of PER_IMG) state[k] = backup[k];
+  }
+}
+
+// a photo can leave as one file or as n sequential panels that align in a swipe
+async function buildFiles(img) {
+  const l = layoutFor(img);
+  if (!l.split || l.split < 2) return [await exportFile(img)];
+  const type = state.format === 'png' ? 'image/png' : 'image/jpeg';
+  const ext = state.format === 'png' ? 'png' : 'jpg';
+  const base = img.name.replace(/\.[^.]+$/, '');
+  const pw = l.cw / l.split;
+  const files = [];
+  for (let k = 0; k < l.split; k++) {
+    const blob = await renderBlob((ctx, scale) => {
+      ctx.save();
+      ctx.translate(-k * pw * scale, 0);
+      drawComposition(ctx, img, l, scale);
+      ctx.restore();
+    }, pw, l.ch, type);
+    files.push(new File([blob], `${base}-${MODES[state.mode].suffix}-${k + 1}of${l.split}.${ext}`, { type }));
+  }
+  return files;
 }
 
 async function collageFile() {
@@ -1405,7 +1541,7 @@ $('download').addEventListener('click', () => {
   if (state.workspace === 'collage') return deliver(btn, 'save image', async () => [await collageFile()]);
   const img = state.images[state.current];
   if (!img) return;
-  deliver(btn, 'save image', async () => [await exportFile(img)]);
+  deliver(btn, 'save image', () => exportFiles(img));
 });
 
 $('downloadAll').addEventListener('click', () => {
@@ -1414,7 +1550,7 @@ $('downloadAll').addEventListener('click', () => {
     const files = [];
     for (let i = 0; i < state.images.length; i++) {
       btn.textContent = `preparing ${i + 1} of ${state.images.length}`;
-      files.push(await exportFile(state.images[i]));
+      files.push(...await exportFiles(state.images[i]));
     }
     return files;
   });
@@ -1441,18 +1577,22 @@ async function addFiles(fileList) {
   for (const file of files) {
     try {
       const bitmap = await decode(file);
-      state.images.push({ bitmap, name: file.name, thumbUrl: URL.createObjectURL(file),
-                          frameIdx: hashSeed(file.name, file.size) % BLESSED_FRAMES.length,
-                          grain: 0,
-                          adj: { zoom: 1, dx: 0, dy: 0, rot: 0 },
-                          cadj: { zoom: 1, dx: 0, dy: 0, rot: 0 } });
+      const im = { bitmap, id: ++imgSeq, name: file.name, thumbUrl: URL.createObjectURL(file),
+                   frameIdx: hashSeed(file.name, file.size) % BLESSED_FRAMES.length,
+                   grain: 0,
+                   adj: { zoom: 1, dx: 0, dy: 0, rot: 0 },
+                   cadj: { zoom: 1, dx: 0, dy: 0, rot: 0 } };
+      storeSettings(im);
+      state.images.push(im);
     } catch {
       unreadable.push(file.name);
     }
   }
   if (unreadable.length) msg = `could not read ${unreadable.join(', ')}`;
   if (state.images.length) {
+    storeSettings(state.images[state.current]);   // keep the outgoing photo's edits
     state.current = state.images.length - 1;
+    loadSettings(state.images[state.current]);
     document.body.classList.add('has-images');
     $('empty').style.display = 'none';
     preview.style.display = 'block';
@@ -1467,6 +1607,7 @@ async function addFiles(fileList) {
     renderPreview();
   }
   if (msg) notice(msg);
+  resetHistory();
 }
 
 /* ---------- filmstrip ---------- */
@@ -1517,6 +1658,7 @@ function renderStrip() {
         const from = movingFrom;
         movingFrom = null;
         if (from !== i) {
+          commit();
           const [moved] = state.images.splice(from, 1);
           state.images.splice(i, 0, moved);
           state.current = state.images.indexOf(moved);
@@ -1525,8 +1667,18 @@ function renderStrip() {
         renderPreview();
         return;
       }
+      if (state.workspace === 'singles' && state.current !== i) {
+        storeSettings(state.images[state.current]);
+        state.current = i;
+        loadSettings(state.images[i]);
+        syncAllUI();
+        renderStrip();
+        renderPreview();
+        return;
+      }
       state.current = i;
       if (state.workspace === 'collage') {
+        commit();
         const photo = state.images[i];
         const inSelected = state.slotMap[state.slot];
         const elsewhere = state.slotMap.indexOf(photo);
@@ -1547,6 +1699,7 @@ function renderStrip() {
       e.preventDefault();
       const from = parseInt(e.dataTransfer.getData('text/plain'), 10);
       if (Number.isNaN(from) || from === i) return;
+      commit();
       const selected = state.images[state.current];
       const [moved] = state.images.splice(from, 1);
       state.images.splice(i, 0, moved);
@@ -1587,19 +1740,133 @@ function removePhoto(i) {
     setTool('none');
     setWorkspace('singles');
     renderStrip();
+    resetHistory();
     return;
   }
   $('wsSection').hidden = state.images.length < 2;
   if (state.images.length < 2 && state.workspace === 'collage') setWorkspace('singles');
-  syncFramingUI();
-  updateControlStates();
+  loadSettings(state.images[state.current]);
+  syncAllUI();
+  renderStrip();
+  renderPreview();
+  resetHistory();
+}
+
+/* ---------- history ----------
+   edits are tiny pure state, so undo is a stack of json snapshots.
+   photo add and remove reset it: removed bitmaps are gone for real. */
+let past = [], future = [], lastTag = null, lastTagTime = 0;
+
+function serialize() {
+  storeSettings(state.images[state.current]);     // capture live edits first
+  return JSON.stringify({
+    s: { workspace: state.workspace, template: state.template, slot: state.slot, format: state.format },
+    order: state.images.map((im) => im.id),
+    imgs: state.images.map((im) => ({ adj: { ...im.adj }, cadj: { ...im.cadj }, grain: im.grain, frameIdx: im.frameIdx, set: { ...im.set } })),
+    map: state.slotMap.map((sl) => (sl ? sl.id : -1)),
+    current: state.current,
+  });
+}
+
+function restore(json) {
+  const snap = JSON.parse(json);
+  Object.assign(state, snap.s);
+  const byId = new Map(state.images.map((im) => [im.id, im]));
+  state.images = snap.order.map((id) => byId.get(id));
+  snap.order.forEach((id, i) => {
+    const im = byId.get(id), pr = snap.imgs[i];
+    Object.assign(im.adj, pr.adj);
+    Object.assign(im.cadj, pr.cadj);
+    im.grain = pr.grain;
+    im.frameIdx = pr.frameIdx;
+    im.set = { ...pr.set };
+  });
+  state.slotMap = snap.map.map((id) => (id === -1 ? null : byId.get(id)));
+  state.current = snap.current;
+  loadSettings(state.images[state.current]);
+  syncAllUI();
   renderStrip();
   renderPreview();
 }
 
+function syncAllUI() {
+  const modeInput = document.querySelector(`input[name="mode"][value="${state.mode}"]`);
+  if (modeInput) modeInput.checked = true;
+  $('fitBtn').setAttribute('aria-pressed', state.fit === 'fit');
+  $('fillBtn').setAttribute('aria-pressed', state.fit === 'fill');
+  document.querySelectorAll('#frameRow button').forEach((b) =>
+    b.setAttribute('aria-pressed', b.dataset.frame === state.frame));
+  $('borderPct').value = state.borderPct;
+  $('borderVal').textContent = `${state.borderPct}%`;
+  $('mat').value = state.mat;
+  $('matVal').textContent = state.mat ? `${state.mat}%` : 'off';
+  $('matColor').value = state.matColor;
+  const preset = [...document.querySelectorAll('.swatch')].find((x) => x.dataset.color === state.color);
+  document.querySelectorAll('.swatch').forEach((x) => x.setAttribute('aria-pressed', x === preset));
+  $('customColor').value = state.color;
+  $('customColor').classList.toggle('active', !preset);
+  $('fmtJpeg').setAttribute('aria-pressed', state.format === 'jpeg');
+  $('fmtPng').setAttribute('aria-pressed', state.format === 'png');
+  $('wsSingles').setAttribute('aria-pressed', state.workspace === 'singles');
+  $('wsCollage').setAttribute('aria-pressed', state.workspace === 'collage');
+  $('wsNote').hidden = state.workspace === 'singles';
+  syncFramingUI();
+  updateControlStates();
+}
+
+function updateHistoryUI() {
+  $('undoBtn').hidden = !past.length;
+  $('redoBtn').hidden = !future.length;
+}
+
+function commit(tag) {
+  const now = Date.now();
+  if (tag && tag === lastTag && now - lastTagTime < 800) { lastTagTime = now; return; }
+  const snap = serialize();
+  if (past.length && past[past.length - 1] === snap) { lastTag = tag || null; lastTagTime = now; return; }
+  past.push(snap);
+  if (past.length > 60) past.shift();
+  future.length = 0;
+  lastTag = tag || null;
+  lastTagTime = now;
+  updateHistoryUI();
+}
+
+function resetHistory() {
+  past = [];
+  future = [];
+  lastTag = null;
+  updateHistoryUI();
+}
+
+function undo() {
+  if (!past.length) return;
+  future.push(serialize());
+  restore(past.pop());
+  lastTag = null;
+  updateHistoryUI();
+}
+
+function redo() {
+  if (!future.length) return;
+  past.push(serialize());
+  restore(future.pop());
+  lastTag = null;
+  updateHistoryUI();
+}
+
+$('undoBtn').addEventListener('click', undo);
+$('redoBtn').addEventListener('click', redo);
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    if (e.shiftKey) redo(); else undo();
+  }
+});
+
 /* ---------- controls ---------- */
 document.querySelectorAll('input[name="mode"]').forEach((r) =>
-  r.addEventListener('change', () => { state.mode = r.value; renderPreview(); }));
+  r.addEventListener('change', () => { commit(); state.mode = r.value; updateControlStates(); renderPreview(); }));
 
 /* ---------- mobile toolbar: one tool panel at a time ---------- */
 let toolsHintDismissed = false;
@@ -1640,12 +1907,17 @@ function updateControlStates() {
   $('filmSection').hidden = !single;
   $('reroll').hidden = !single || state.frame === 'clean';
   $('matSection').hidden = !single || state.frame === 'film';
+  $('splitSection').hidden = !single || MODES[state.mode].ratio === null;
+  document.querySelectorAll('#splitRow button').forEach((b) =>
+    b.setAttribute('aria-pressed', +b.dataset.split === state.split));
   const tb = (name) => document.querySelector(`#toolbar button[data-tool="${name}"]`);
   tb('film').hidden = !single;
   tb('mat').hidden = !single || state.frame === 'film';
+  tb('split').hidden = !single || MODES[state.mode].ratio === null;
   const panel = document.querySelector('aside');
   if ((panel.dataset.tool === 'film' && $('filmSection').hidden) ||
-      (panel.dataset.tool === 'mat' && $('matSection').hidden)) {
+      (panel.dataset.tool === 'mat' && $('matSection').hidden) ||
+      (panel.dataset.tool === 'split' && $('splitSection').hidden)) {
     panel.dataset.tool = 'none';
     document.querySelectorAll('#toolbar button').forEach((b) => b.setAttribute('aria-pressed', 'false'));
   }
@@ -1659,6 +1931,7 @@ function updateControlStates() {
 }
 
 function setWorkspace(ws) {
+  commit();
   state.workspace = ws;
   $('wsSingles').setAttribute('aria-pressed', ws === 'singles');
   $('wsCollage').setAttribute('aria-pressed', ws === 'collage');
@@ -1676,6 +1949,7 @@ $('wsCollage').addEventListener('click', () => setWorkspace('collage'));
 
 document.querySelectorAll('#tplRow button').forEach((b) =>
   b.addEventListener('click', () => {
+    commit();
     state.template = b.dataset.tpl;
     initSlotMap();
     syncFramingUI();
@@ -1684,6 +1958,7 @@ document.querySelectorAll('#tplRow button').forEach((b) =>
   }));
 
 function setFit(fit) {
+  commit();
   state.fit = fit;
   $('fitBtn').setAttribute('aria-pressed', fit === 'fit');
   $('fillBtn').setAttribute('aria-pressed', fit === 'fill');
@@ -1694,6 +1969,7 @@ $('fitBtn').addEventListener('click', () => setFit('fit'));
 $('fillBtn').addEventListener('click', () => setFit('fill'));
 
 function setFrame(f) {
+  commit();
   state.frame = f;
   if (f === 'film' && state.borderPct < 5) {    // the frame needs room to breathe
     state.borderPct = 8;
@@ -1706,9 +1982,18 @@ function setFrame(f) {
 document.querySelectorAll('#frameRow button').forEach((b) =>
   b.addEventListener('click', () => setFrame(b.dataset.frame)));
 
+document.querySelectorAll('#splitRow button').forEach((b) =>
+  b.addEventListener('click', () => {
+    commit();
+    state.split = +b.dataset.split;
+    updateControlStates();
+    renderPreview();
+  }));
+
 $('reroll').addEventListener('click', () => {
   const img = state.images[state.current];
   if (!img) return;
+  commit();
   img.frameIdx = (img.frameIdx + 1) % BLESSED_FRAMES.length;
   renderPreview();
 });
@@ -1741,6 +2026,7 @@ function syncFramingUI() {
 $('zoom').addEventListener('input', (e) => {
   const adj = activeAdj();
   if (!adj) return;
+  commit('zoom');
   adj.zoom = parseFloat(e.target.value);
   $('zoomVal').textContent = `x${adj.zoom.toFixed(2)}`;
   renderPreview();
@@ -1749,6 +2035,7 @@ $('zoom').addEventListener('input', (e) => {
 $('rot').addEventListener('input', (e) => {
   const adj = activeAdj();
   if (!adj) return;
+  commit('rot');
   let v = parseFloat(e.target.value);
   if (Math.abs(v) < 2) v = 0;                   // magnetic zero, impossible to miss
   adj.rot = v;
@@ -1761,6 +2048,7 @@ $('rot').addEventListener('input', (e) => {
 $('rotVal').addEventListener('click', () => {
   const adj = activeAdj();
   if (!adj) return;
+  commit();
   adj.rot = 0;
   syncFramingUI();
   renderPreview();
@@ -1768,6 +2056,7 @@ $('rotVal').addEventListener('click', () => {
 $('zoomVal').addEventListener('click', () => {
   const adj = activeAdj();
   if (!adj) return;
+  commit();
   adj.zoom = 1;
   syncFramingUI();
   renderPreview();
@@ -1776,6 +2065,7 @@ $('zoomVal').addEventListener('click', () => {
 function resetFraming() {
   const adj = activeAdj();
   if (!adj) return;
+  commit();
   Object.assign(adj, { zoom: 1, dx: 0, dy: 0, rot: 0 });
   syncFramingUI();
   renderPreview();
@@ -1800,6 +2090,7 @@ preview.addEventListener('pointerdown', (e) => {
   if (!state.images.length) return;
   if (state.workspace === 'collage') {
     if (!pointers.size) {                         // only the first touch picks a cell
+      commit('gesture');
       const c = computeCollage();
       const rect = preview.getBoundingClientRect();
       const k = c.W / rect.width;
@@ -1808,6 +2099,8 @@ preview.addEventListener('pointerdown', (e) => {
         px >= x && px <= x + w && py >= y && py <= y + h);
       if (hit >= 0 && hit !== state.slot) { state.slot = hit; syncFramingUI(); renderPreview(); }
     }
+  } else {
+    commit('gesture');
   }
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pointers.size === 2) {
@@ -1879,6 +2172,7 @@ preview.addEventListener('pointermove', (e) => {
   }));
 
 $('borderPct').addEventListener('input', (e) => {
+  commit('border');
   state.borderPct = parseFloat(e.target.value);
   $('borderVal').textContent = `${state.borderPct}%`;
   renderPreview();
@@ -1886,6 +2180,7 @@ $('borderPct').addEventListener('input', (e) => {
 
 document.querySelectorAll('#alignGrid button').forEach((b) =>
   b.addEventListener('click', () => {
+    commit();
     state.alignH = b.dataset.h;
     state.alignV = b.dataset.v;
     document.querySelectorAll('#alignGrid button')
@@ -1895,6 +2190,7 @@ document.querySelectorAll('#alignGrid button').forEach((b) =>
 
 document.querySelectorAll('.swatch').forEach((s) =>
   s.addEventListener('click', () => {
+    commit();
     state.color = s.dataset.color;
     document.querySelectorAll('.swatch').forEach((x) => x.setAttribute('aria-pressed', x === s));
     $('customColor').value = state.color;
@@ -1903,6 +2199,7 @@ document.querySelectorAll('.swatch').forEach((s) =>
   }));
 
 $('customColor').addEventListener('input', (e) => {
+  commit('color');
   state.color = e.target.value;
   document.querySelectorAll('.swatch').forEach((x) => x.setAttribute('aria-pressed', 'false'));
   e.target.classList.add('active');
@@ -1921,18 +2218,21 @@ $('fmtPng').addEventListener('click', () => setFormat('png'));
 $('grain').addEventListener('input', (e) => {
   const img = activeImg();
   if (!img) return;
+  commit('grain');
   img.grain = parseInt(e.target.value, 10);
   $('grainVal').textContent = img.grain ? `${img.grain}%` : 'off';
   renderPreview();
 });
 
 $('mat').addEventListener('input', (e) => {
+  commit('mat');
   state.mat = parseFloat(e.target.value);
   $('matVal').textContent = state.mat ? `${state.mat}%` : 'off';
   renderPreview();
 });
 
 $('matVal').addEventListener('click', () => {
+  commit();
   state.mat = 0;
   $('mat').value = 0;
   $('matVal').textContent = 'off';
@@ -1940,6 +2240,7 @@ $('matVal').addEventListener('click', () => {
 });
 
 $('matColor').addEventListener('input', (e) => {
+  commit('matcolor');
   state.matColor = e.target.value;
   renderPreview();
 });
@@ -1947,6 +2248,7 @@ $('matColor').addEventListener('input', (e) => {
 $('grainVal').addEventListener('click', () => {
   const img = activeImg();
   if (!img) return;
+  commit();
   img.grain = 0;
   syncFramingUI();
   renderPreview();
