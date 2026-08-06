@@ -81,6 +81,7 @@
   .credit a:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
   #creditChip { display: none; }
   #creditLanding { display: none; }
+  .chips { display: contents; }   /* desktop: the readout stays a flex child of the table */
   .empty .pitch a { color: var(--muted); text-decoration: underline dotted; }
   .empty .pitch a:hover { color: var(--amber); }
 
@@ -404,14 +405,24 @@
       overflow: visible;
     }
     aside[data-tool="none"] { display: none; }
-    header { display: none; }
+    body.has-images header { display: none; }   /* the wordmark greets, then gets out of the way */
+    .credit { display: none; }
     body:not(.has-images) #toolbar { display: none; }
+    .chips {
+      position: absolute;
+      top: 52px; left: 12px; right: 12px;   /* below the round buttons, never over them */
+      z-index: 3;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 6px;
+      pointer-events: none;
+    }
+    .chips > * { pointer-events: auto; }
     .readout {
       display: none;
-      position: absolute;
-      top: 10px; left: 12px;
-      max-width: calc(100% - 86px);
-      z-index: 3;
+      max-width: 100%;
+      white-space: normal;                  /* the details are the point: wrap, never truncate */
       background: var(--panel);
       border: 1px solid var(--panel-edge);
       border-radius: 7px;
@@ -421,9 +432,6 @@
     }
     .table.show-info .readout { display: block; }
     #creditChip {
-      position: absolute;
-      top: 44px; left: 12px;
-      z-index: 3;
       background: var(--panel);
       border: 1px solid var(--panel-edge);
       border-radius: 7px;
@@ -435,6 +443,12 @@
     #creditLanding { display: block; }
     #creditChip a { color: var(--muted); text-decoration: underline dotted; }
     body.has-images #infoToggle { display: block; }
+    #undoBtn, #redoBtn, #infoToggle, #bgToggle { width: 32px; height: 32px; }   /* finger sized */
+    #undoBtn, #redoBtn { font-size: 16px; }
+    #undoBtn { left: 12px; }
+    #redoBtn { left: 52px; }
+    #infoToggle { font-size: 15px; right: 52px; }
+    #bgToggle { right: 12px; }
     aside > [data-tab] { display: none; }
     aside[data-tool="format"] > [data-tab="format"],
     aside[data-tool="border"] > [data-tab="border"],
@@ -446,17 +460,12 @@
     aside[data-tool="split"]  > [data-tab="split"],
     aside[data-tool="save"]   > section[data-tab="save"] { display: block; }
     aside[data-tool="save"]   > .actions { display: flex; flex-direction: row; margin: 12px 0 0; }
-    .group-label { display: none; }
+    .group-label { margin-bottom: 6px; }    /* each open panel names itself */
     .modes {
       flex-direction: row;
-      flex-wrap: nowrap;
+      flex-wrap: wrap;                      /* every format visible, nothing hides offscreen */
       gap: 6px;
-      max-width: 100%;
-      overflow-x: auto;
-      scrollbar-width: none;
-      padding-bottom: 2px;
     }
-    .modes::-webkit-scrollbar { display: none; }
     .modes label {
       flex: none;
       white-space: nowrap;
@@ -600,41 +609,6 @@
       </div>
     </section>
 
-    <section data-tab="film" id="filmSection">
-      <div class="group-label">Film</div>
-      <div class="format-row" id="frameRow">
-        <button data-frame="clean" aria-pressed="true">clean</button>
-        <button data-frame="film" aria-pressed="false">film</button>
-      </div>
-      <button class="reset-btn" id="reroll" hidden>another frame</button>
-    </section>
-
-    <section data-tab="grain">
-      <div class="group-label">Grain</div>
-      <div class="slider-row">
-        <input type="range" id="grain" min="0" max="100" step="5" value="0" aria-label="Film grain amount">
-        <span class="slider-val" id="grainVal">off</span>
-      </div>
-    </section>
-
-    <section data-tab="split" id="splitSection">
-      <div class="group-label">Split</div>
-      <div class="format-row" id="splitRow">
-        <button data-split="1" aria-pressed="true">1 post</button>
-        <button data-split="2" aria-pressed="false">2 posts</button>
-        <button data-split="3" aria-pressed="false">3 posts</button>
-      </div>
-    </section>
-
-    <section data-tab="mat" id="matSection">
-      <div class="group-label">Mat</div>
-      <div class="slider-row">
-        <input type="range" id="mat" min="0" max="5" step="0.25" value="0" aria-label="Inner mat width, percent of the long side">
-        <span class="slider-val" id="matVal">off</span>
-        <input type="color" id="matColor" value="#000000" aria-label="Mat color">
-      </div>
-    </section>
-
     <section data-tab="frame">
       <div class="group-label" id="framingLabel">Position</div>
       <div class="align-grid" role="group" aria-label="Photo position on the canvas" id="alignGrid">
@@ -669,12 +643,48 @@
       </div>
     </section>
 
+    <section data-tab="film" id="filmSection">
+      <div class="group-label">Film</div>
+      <div class="format-row" id="frameRow">
+        <button data-frame="clean" aria-pressed="true">clean</button>
+        <button data-frame="film" aria-pressed="false">film</button>
+      </div>
+      <button class="reset-btn" id="reroll" hidden>another frame</button>
+    </section>
+
+    <section data-tab="grain">
+      <div class="group-label">Grain</div>
+      <div class="slider-row">
+        <input type="range" id="grain" min="0" max="100" step="5" value="0" aria-label="Film grain amount">
+        <span class="slider-val" id="grainVal">off</span>
+      </div>
+    </section>
+
+    <section data-tab="mat" id="matSection">
+      <div class="group-label">Mat</div>
+      <div class="slider-row">
+        <input type="range" id="mat" min="0" max="5" step="0.25" value="0" aria-label="Inner mat width, percent of the long side">
+        <span class="slider-val" id="matVal">off</span>
+        <input type="color" id="matColor" value="#000000" aria-label="Mat color">
+      </div>
+    </section>
+
+    <section data-tab="split" id="splitSection">
+      <div class="group-label">Split</div>
+      <div class="format-row" id="splitRow">
+        <button data-split="1" aria-pressed="true">1 post</button>
+        <button data-split="2" aria-pressed="false">2 posts</button>
+        <button data-split="3" aria-pressed="false">3 posts</button>
+      </div>
+    </section>
+
     <section data-tab="save">
       <div class="group-label">Export</div>
       <div class="format-row">
         <button id="fmtJpeg" aria-pressed="true">JPEG</button>
         <button id="fmtPng" aria-pressed="false">PNG</button>
       </div>
+      <button class="reset-btn" id="applyAll" hidden>apply these edits to all photos</button>
     </section>
 
     <div class="actions" data-tab="save">
@@ -688,13 +698,15 @@
     <button id="redoBtn" aria-label="redo" hidden>›</button>
     <button id="infoToggle" aria-label="output size details" aria-pressed="false">i</button>
     <button id="bgToggle" aria-label="preview on a light background"></button>
-    <div class="readout" id="readout"></div>
-    <p id="creditChip">made by <a href="https://github.com/sergiopaniego" rel="noopener">sergio paniego</a>, <a href="https://github.com/sergiopaniego/brink" rel="noopener">source</a></p>
+    <div class="chips">
+      <div class="readout" id="readout"></div>
+      <p id="creditChip">made by <a href="https://github.com/sergiopaniego" rel="noopener">sergio paniego</a>, <a href="https://github.com/sergiopaniego/brink" rel="noopener">source</a></p>
+    </div>
     <canvas id="preview"></canvas>
     <div class="empty" id="empty">
       <div class="drop" id="drop" tabindex="0" role="button" aria-label="Add photos">
         <h2>add your photos</h2>
-        <p>tap to choose, or drop them here<br>vertical or landscape, jpeg or png</p>
+        <p>tap to choose, or drop them here<br>jpeg or png</p>
       </div>
       <p class="pitch">🤍 white borders for instagram, stories and tiktok, at full resolution</p>
       <p class="pitch">🔒 your photos never leave your device, everything runs in your browser</p>
@@ -710,7 +722,7 @@
   <div id="tools">
     <button data-tool="format" aria-pressed="false">format</button>
     <button data-tool="border" aria-pressed="false">border</button>
-    <button data-tool="frame" aria-pressed="false">frame</button>
+    <button data-tool="frame" aria-pressed="false">position</button>
     <button data-tool="color" aria-pressed="false">color</button>
     <button data-tool="film" aria-pressed="false">film</button>
     <button data-tool="grain" aria-pressed="false">grain</button>
@@ -735,6 +747,8 @@ const MODES = {
   story:    { ratio: 9 / 16,   suffix: 'story' },
   original: { ratio: null,     suffix: 'border' },
 };
+
+const MAX_PHOTOS = 20;      // the instagram carousel limit
 
 // curated by hand from the frame generator, each number is a full frame recipe
 const BLESSED_FRAMES = [1, 2, 4, 5, 6, 7, 9, 10, 11, 12, 13, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 30, 34, 36, 40, 44, 45];
@@ -1562,6 +1576,20 @@ $('downloadAll').addEventListener('click', () => {
   });
 });
 
+// style one photo by hand, the rest follow; framing stays personal to each photo
+$('applyAll').addEventListener('click', () => {
+  const cur = state.images[state.current];
+  if (!cur) return;
+  commit();
+  storeSettings(cur);
+  for (const img of state.images) {
+    if (img === cur) continue;
+    img.set = { ...cur.set };
+    img.grain = cur.grain;
+  }
+  notice('applied to all photos');
+});
+
 /* ---------- loading ---------- */
 async function decode(file) {
   try {
@@ -1574,7 +1602,7 @@ async function decode(file) {
 async function addFiles(fileList) {
   let files = [...fileList].filter((f) => f.type.startsWith('image/'));
   let msg = null;
-  const room = 20 - state.images.length;   // instagram carousel limit
+  const room = MAX_PHOTOS - state.images.length;
   if (files.length > room) {
     files = files.slice(0, Math.max(0, room));
     msg = '20 photos max, the instagram carousel limit';
@@ -1721,12 +1749,14 @@ function renderStrip() {
     wrap.append(b, rm);
     strip.appendChild(wrap);
   });
-  const add = document.createElement('button');
-  add.className = 'thumb-add';
-  add.textContent = '+';
-  add.setAttribute('aria-label', 'Add more photos');
-  add.addEventListener('click', () => $('fileInput').click());
-  strip.appendChild(add);
+  if (state.images.length < MAX_PHOTOS) {       // at the limit there is nothing to add
+    const add = document.createElement('button');
+    add.className = 'thumb-add';
+    add.textContent = '+';
+    add.setAttribute('aria-label', 'Add more photos');
+    add.addEventListener('click', () => $('fileInput').click());
+    strip.appendChild(add);
+  }
 }
 
 function removePhoto(i) {
@@ -1894,6 +1924,8 @@ function setTool(tool) {
   panel.dataset.tool = tool;
   document.querySelectorAll('#toolbar button').forEach((b) =>
     b.setAttribute('aria-pressed', b.dataset.tool === tool));
+  const lit = document.querySelector(`#tools button[data-tool="${tool}"]`);
+  if (lit) lit.scrollIntoView({ block: 'nearest', inline: 'nearest' });   // the lit tab names the open panel
 }
 document.querySelectorAll('#toolbar button').forEach((b) =>
   b.addEventListener('click', () => setTool(b.dataset.tool)));
@@ -1920,6 +1952,8 @@ function updateControlStates() {
   tb('film').hidden = !single;
   tb('mat').hidden = !single || state.frame === 'film';
   tb('split').hidden = !single || MODES[state.mode].ratio === null;
+  tb('frame').textContent = single ? 'position' : 'frame';
+  $('applyAll').hidden = !single || state.images.length < 2;
   const panel = document.querySelector('aside');
   if ((panel.dataset.tool === 'film' && $('filmSection').hidden) ||
       (panel.dataset.tool === 'mat' && $('matSection').hidden) ||

@@ -111,6 +111,13 @@ test('caps the set at 20 photos and says so', async () => {
   const { doc, B } = await freshApp(...files);
   eq(B.state.images.length, 20, 'capped');
   ok(doc.getElementById('readout').textContent.includes('20 photos max'), 'cap notice shown');
+  eq(doc.querySelectorAll('.thumb-add').length, 0, 'add tile gone at the limit');
+  const before = B.state.images.length;
+  await doc.defaultView.addFiles([await photo(80, 120, 'extra.jpg')]);
+  eq(B.state.images.length, before, 'nothing sneaks past the cap');
+  ok(doc.getElementById('readout').textContent.includes('20 photos max'), 'trying again repeats the notice');
+  doc.querySelector('.rm').click();
+  eq(doc.querySelectorAll('.thumb-add').length, 1, 'add tile returns after removing one');
 });
 
 test('unreadable files are reported, good ones still load', async () => {
@@ -771,6 +778,98 @@ test('undo and redo walk the edit history', async () => {
   eq(B.state.borderPct, 7, 'redo restores the border');
   doc.getElementById('redoBtn').click();
   eq(B.state.mode, 'square', 'redo restores the mode');
+});
+
+test('apply to all copies the current edits to every photo, framing stays personal', async () => {
+  const { doc, B } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(400, 600, 'b.jpg'), await photo(400, 600, 'c.jpg'));
+  const vis = (id) => doc.getElementById(id).offsetParent !== null;
+  ok(vis('applyAll'), 'button lives with several photos');
+  // c is selected: restyle it, then spread the look
+  const border = doc.getElementById('borderPct');
+  border.value = 6;
+  border.dispatchEvent(new Event('input', { bubbles: true }));
+  doc.querySelector('input[name="mode"][value="square"]').click();
+  const grain = doc.getElementById('grain');
+  grain.value = 40;
+  grain.dispatchEvent(new Event('input', { bubbles: true }));
+  B.state.images[0].adj.zoom = 2;                  // a has its own framing
+  doc.getElementById('applyAll').click();
+  ok(doc.getElementById('readout').textContent.includes('applied to all photos'), 'confirmation notice');
+  doc.querySelectorAll('.thumb')[0].click();
+  eq(B.state.borderPct, 6, 'a got the border');
+  eq(B.state.mode, 'square', 'a got the mode');
+  eq(B.state.images[0].grain, 40, 'a got the grain');
+  eq(B.state.images[0].adj.zoom, 2, 'framing untouched');
+  doc.getElementById('undoBtn').click();
+  eq(B.state.images[0].set.borderPct, 2, 'undo gives every photo its own settings back');
+});
+
+test('apply to all hides with one photo and in collage', async () => {
+  const { doc } = await freshApp(await photo(400, 600, 'a.jpg'));
+  const vis = () => doc.getElementById('applyAll').offsetParent !== null;
+  ok(!vis(), 'hidden with a single photo');
+  await doc.defaultView.addFiles([await photo(600, 400, 'b.jpg')]);
+  ok(vis(), 'appears with a second photo');
+  doc.getElementById('wsCollage').click();
+  ok(!vis(), 'hidden in collage');
+});
+
+test('the info chip sits below undo and redo, wraps instead of truncating', async () => {
+  const { doc } = await freshAppAt(430, await photo(400, 600, 'a.jpg'));
+  const border = doc.getElementById('borderPct');
+  border.value = 6;
+  border.dispatchEvent(new Event('input', { bubbles: true }));
+  doc.getElementById('infoToggle').click();
+  ok(doc.getElementById('readout').offsetParent !== null, 'chip shown');
+  const u = doc.getElementById('undoBtn').getBoundingClientRect();
+  ok(u.width >= 30 && u.height >= 30, 'undo is finger sized');
+  const hit = doc.elementFromPoint(u.left + u.width / 2, u.top + u.height / 2);
+  eq(hit, doc.getElementById('undoBtn'), 'undo center hits undo, not the chip');
+  const style = doc.defaultView.getComputedStyle(doc.getElementById('readout'));
+  eq(style.whiteSpace, 'normal', 'chip text wraps');
+});
+
+test('each mobile tool panel names itself', async () => {
+  const { doc } = await freshAppAt(430, await photo(400, 600, 'a.jpg'));
+  doc.querySelector('#tools button[data-tool="grain"]').click();
+  const label = doc.querySelector('aside [data-tab="grain"] .group-label');
+  ok(label && label.offsetParent !== null, 'grain panel shows its label');
+  ok(/grain/i.test(label.textContent), 'and it says grain');
+});
+
+test('every format pill is visible on mobile without scrolling', async () => {
+  const { doc } = await freshAppAt(430, await photo(400, 600, 'a.jpg'));
+  doc.querySelector('#tools button[data-tool="format"]').click();
+  const modes = doc.querySelector('.modes');
+  ok(modes.scrollWidth <= modes.clientWidth + 1, 'no hidden overflow');
+  const m = modes.getBoundingClientRect();
+  for (const lab of modes.querySelectorAll('label')) {
+    const r = lab.getBoundingClientRect();
+    ok(r.right <= m.right + 1 && r.left >= m.left - 1, `${lab.textContent.trim()} fits on screen`);
+  }
+});
+
+test('the framing tool is named position in singles, frame in collage', async () => {
+  const { doc } = await freshAppAt(430, await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'));
+  const btn = doc.querySelector('#tools button[data-tool="frame"]');
+  eq(btn.textContent, 'position', 'singles name');
+  doc.querySelector('#tools button[data-tool="format"]').click();
+  doc.getElementById('wsCollage').click();
+  eq(btn.textContent, 'frame', 'collage name');
+});
+
+test('mobile shows the wordmark on the landing screen only', async () => {
+  const { doc } = await freshAppAt(430);
+  ok(doc.querySelector('header').offsetParent !== null, 'header greets on the empty screen');
+  ok(doc.querySelector('.credit').offsetParent === null, 'without the credit line');
+  const { doc: d2 } = await freshAppAt(430, await photo(400, 600, 'a.jpg'));
+  ok(d2.querySelector('header').offsetParent === null, 'gone while editing');
+});
+
+test('the desktop sidebar mirrors the mobile tool order', async () => {
+  const { doc } = await freshApp(await photo(400, 600, 'a.jpg'));
+  const seq = [...doc.querySelectorAll('aside > [data-tab]')].map((s) => s.dataset.tab).join(',');
+  eq(seq, 'format,format,format,border,frame,color,film,grain,mat,split,save,save', 'section order');
 });
 
 /* ---------- interface state ---------- */
