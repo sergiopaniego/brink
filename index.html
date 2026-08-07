@@ -134,7 +134,14 @@
   .modes label:has(input:checked) .ratio { color: var(--amber); }
 
   .slider-row { display: flex; align-items: center; gap: 10px; }
-  input[type="range"] { flex: 1; accent-color: var(--amber); }
+  input[type="range"] {
+    flex: 1;
+    accent-color: var(--amber);
+    -webkit-touch-callout: none;   /* long press means fine adjust, not text selection */
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .slider-row.fine input[type="range"] { accent-color: var(--paper); }
   .reset-btn {
     background: none; border: none; padding: 0;
     margin-top: 10px;
@@ -145,7 +152,28 @@
   }
   .reset-btn:hover { color: var(--amber); }
   .reset-btn:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-  .slider-val { font: 12px var(--mono); color: var(--amber); min-width: 44px; text-align: right; }
+  .slider-val {
+    font: 12px var(--mono);
+    color: var(--amber);
+    min-width: 44px;
+    text-align: right;
+    text-decoration: underline dotted;   /* tap it to type the exact value */
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .val-edit { display: inline-flex; align-items: center; gap: 8px; }
+  .val-edit input {
+    width: 64px;
+    background: var(--ink);
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    color: var(--amber);
+    font: 16px var(--mono);              /* under 16px ios zooms the whole page on focus */
+    text-align: right;
+    padding: 3px 8px;
+  }
+  .val-edit input:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+  .val-edit .reset-btn { margin-top: 0; }
 
   .align-grid {
     display: grid;
@@ -299,6 +327,22 @@
   }
   body.has-images #bgToggle { display: block; }
   #bgToggle:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+  #gridToggle {
+    position: absolute;
+    top: 12px; right: 74px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 1px solid var(--panel-edge);
+    background: none;
+    color: var(--muted);
+    font: 12px var(--mono);
+    cursor: pointer;
+    padding: 0;
+    display: none;
+  }
+  body.has-images #gridToggle { display: block; }
+  #gridToggle[aria-pressed="true"] { color: var(--amber); border-color: rgba(224,164,88,0.5); }
+  #gridToggle:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
   .table.light { background: #fafafa; }
   .table.light .readout { color: #96661c; }
   .table.light .readout .dim2 { color: #85857f; }
@@ -443,12 +487,13 @@
     #creditLanding { display: block; }
     #creditChip a { color: var(--muted); text-decoration: underline dotted; }
     body.has-images #infoToggle { display: block; }
-    #undoBtn, #redoBtn, #infoToggle, #bgToggle { width: 32px; height: 32px; }   /* finger sized */
+    #undoBtn, #redoBtn, #infoToggle, #bgToggle, #gridToggle { width: 32px; height: 32px; }   /* finger sized */
     #undoBtn, #redoBtn { font-size: 16px; }
     #undoBtn { left: 12px; }
     #redoBtn { left: 52px; }
     #infoToggle { font-size: 15px; right: 52px; }
     #bgToggle { right: 12px; }
+    #gridToggle { font-size: 14px; right: 92px; }
     aside > [data-tab] { display: none; }
     aside[data-tool="format"] > [data-tab="format"],
     aside[data-tool="border"] > [data-tab="border"],
@@ -698,6 +743,7 @@
     <button id="redoBtn" aria-label="redo" hidden>›</button>
     <button id="infoToggle" aria-label="output size details" aria-pressed="false">i</button>
     <button id="bgToggle" aria-label="preview on a light background"></button>
+    <button id="gridToggle" aria-label="grid guides" aria-pressed="false">#</button>
     <div class="chips">
       <div class="readout" id="readout"></div>
       <p id="creditChip">made by <a href="https://github.com/sergiopaniego" rel="noopener">sergio paniego</a>, <a href="https://github.com/sergiopaniego/brink" rel="noopener">source</a></p>
@@ -1307,6 +1353,7 @@ let movingFrom = null;        // long pressed thumbnail waiting for its drop tar
 let suppressNextClick = false;
 let noticeTimer = null;
 let redrawKeepsShare = false;
+let showGrid = false;         // rule of thirds guides, preview only
 function notice(msg) {
   clearTimeout(noticeTimer);
   $('readout').textContent = msg;
@@ -1322,6 +1369,26 @@ function notice(msg) {
 }
 
 /* ---------- preview ---------- */
+// rule of thirds over the whole canvas, never drawn into an export
+function drawGridGuides() {
+  if (!showGrid) return;
+  pctx.save();
+  pctx.beginPath();
+  for (const f of [1 / 3, 2 / 3]) {
+    const x = Math.round(preview.width * f) + 0.5;
+    const y = Math.round(preview.height * f) + 0.5;
+    pctx.moveTo(x, 0); pctx.lineTo(x, preview.height);
+    pctx.moveTo(0, y); pctx.lineTo(preview.width, y);
+  }
+  pctx.lineWidth = 3;
+  pctx.strokeStyle = 'rgba(0,0,0,0.3)';           // dark halo so the line reads on light photos
+  pctx.stroke();
+  pctx.lineWidth = 1;
+  pctx.strokeStyle = 'rgba(244,241,234,0.85)';    // and paper on dark ones
+  pctx.stroke();
+  pctx.restore();
+}
+
 function renderPreview() {
   if (!state.images.length) return;
   if (!redrawKeepsShare) cancelPendingShare();
@@ -1354,6 +1421,7 @@ function renderCollagePreview() {
   pctx.strokeStyle = 'rgba(224,164,88,0.95)';
   pctx.lineWidth = 2;
   pctx.strokeRect(rx * scale + 1, ry * scale + 1, rw * scale - 2, rh * scale - 2);
+  drawGridGuides();
   preview.style.cursor = 'grab';
 
   $('readout').innerHTML =
@@ -1393,6 +1461,7 @@ function renderSinglePreview() {
     }
     pctx.setLineDash([]);
   }
+  drawGridGuides();
   preview.style.cursor = 'grab';
 
   const trim = l.trimW > 0 ? `, trims ${l.trimW} px width`
@@ -2051,6 +2120,7 @@ function activeAdj() {
 }
 
 function syncFramingUI() {
+  for (const f of fineExits) f();       // sliders must show their full range before syncing
   const adj = activeAdj();
   const z = adj ? adj.zoom : 1;
   const r = adj ? adj.rot || 0 : 0;
@@ -2077,30 +2147,135 @@ $('rot').addEventListener('input', (e) => {
   if (!adj) return;
   commit('rot');
   let v = parseFloat(e.target.value);
-  if (Math.abs(v) < 2) v = 0;                   // magnetic zero, impossible to miss
+  if (!e.target.dataset.fine && Math.abs(v) < 2) v = 0;   // magnetic zero, except fine mode lives for small angles
   adj.rot = v;
   e.target.value = v;
   $('rotVal').textContent = `${+v.toFixed(1)}°`;
   renderPreview();
 });
 
-// tapping a value resets just that control
-$('rotVal').addEventListener('click', () => {
+/* ---------- direct entry: tap a value chip to type it ----------
+   phone keyboards are easy to summon and hard to leave, so the editor
+   always shows a done button; typed values are exact, never snapped. */
+function valueEditor(spanId, opts) {
+  const span = $(spanId);
+  span.addEventListener('click', () => {
+    if (document.querySelector('.val-edit')) return;
+    const wrap = document.createElement('span');
+    wrap.className = 'val-edit';
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.inputMode = opts.keyboard || 'decimal';
+    inp.enterKeyHint = 'done';
+    inp.value = String(+(+opts.get()).toFixed(2));
+    inp.setAttribute('aria-label', 'type the exact value');
+    const done = document.createElement('button');
+    done.type = 'button';
+    done.className = 'reset-btn';
+    done.textContent = 'done';
+    wrap.append(inp, done);
+    span.hidden = true;
+    span.after(wrap);
+    inp.focus();
+    inp.select();
+    let finished = false;
+    const finish = (apply) => {
+      if (finished) return;
+      finished = true;
+      const v = parseFloat(inp.value.replace(',', '.'));
+      if (apply && !Number.isNaN(v)) opts.set(Math.round(clamp(v, opts.min, opts.max) * 100) / 100);
+      wrap.remove();
+      span.hidden = false;
+    };
+    done.addEventListener('click', () => { finish(true); inp.blur(); });
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { finish(true); inp.blur(); }
+      if (e.key === 'Escape') finish(false);
+    });
+    inp.addEventListener('blur', () => finish(true));
+  });
+}
+
+valueEditor('borderVal', { min: 0, max: 10, get: () => state.borderPct, set: (v) => {
+  commit();
+  state.borderPct = v;
+  $('borderPct').value = v;
+  $('borderVal').textContent = `${v}%`;
+  renderPreview();
+} });
+valueEditor('zoomVal', { min: 1, max: 3, get: () => activeAdj()?.zoom ?? 1, set: (v) => {
   const adj = activeAdj();
   if (!adj) return;
   commit();
-  adj.rot = 0;
+  adj.zoom = v;
   syncFramingUI();
   renderPreview();
-});
-$('zoomVal').addEventListener('click', () => {
+} });
+valueEditor('rotVal', { min: -180, max: 180, keyboard: 'text', get: () => activeAdj()?.rot ?? 0, set: (v) => {
   const adj = activeAdj();
   if (!adj) return;
   commit();
-  adj.zoom = 1;
+  adj.rot = v;
   syncFramingUI();
   renderPreview();
-});
+} });
+valueEditor('grainVal', { min: 0, max: 100, get: () => activeImg()?.grain ?? 0, set: (v) => {
+  const img = activeImg();
+  if (!img) return;
+  commit();
+  img.grain = Math.round(v);
+  syncFramingUI();
+  renderPreview();
+} });
+valueEditor('matVal', { min: 0, max: 5, get: () => state.mat, set: (v) => {
+  commit();
+  state.mat = v;
+  $('mat').value = v;
+  $('matVal').textContent = v ? `${v}%` : 'off';
+  renderPreview();
+} });
+
+/* ---------- fine mode: hold a slider still and its range zooms in ---------- */
+const fineExits = [];
+function fineTune(id, span, step) {
+  const el = $(id);
+  const base = { min: el.min, max: el.max, step: el.step };
+  let timer = null, x0 = 0, y0 = 0;
+  const exit = () => {
+    if (!el.dataset.fine) return;
+    delete el.dataset.fine;
+    const v = parseFloat(el.value);
+    el.min = base.min; el.max = base.max; el.step = base.step;
+    el.value = v;                                 // full range back, the fine value stays
+    el.closest('.slider-row').classList.remove('fine');
+  };
+  fineExits.push(exit);
+  el.addEventListener('pointerdown', (e) => {
+    x0 = e.clientX; y0 = e.clientY;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const v = parseFloat(el.value);
+      el.min = Math.max(parseFloat(base.min), v - span);
+      el.max = Math.min(parseFloat(base.max), v + span);
+      el.step = step;
+      el.value = v;
+      el.dataset.fine = '1';
+      el.closest('.slider-row').classList.add('fine');
+      notice('fine adjust on, small moves now');
+    }, 450);
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (timer !== null && Math.hypot(e.clientX - x0, e.clientY - y0) > 6) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  });
+  ['pointerup', 'pointercancel'].forEach((t) =>
+    el.addEventListener(t, () => { clearTimeout(timer); timer = null; }));
+  el.addEventListener('change', exit);            // lifting the finger locks it in
+}
+fineTune('rot', 3, 0.1);
+fineTune('zoom', 0.3, 0.01);
 
 function resetFraming() {
   const adj = activeAdj();
@@ -2273,30 +2448,21 @@ $('mat').addEventListener('input', (e) => {
   renderPreview();
 });
 
-$('matVal').addEventListener('click', () => {
-  commit();
-  state.mat = 0;
-  $('mat').value = 0;
-  $('matVal').textContent = 'off';
-  renderPreview();
-});
-
 $('matColor').addEventListener('input', (e) => {
   commit('matcolor');
   state.matColor = e.target.value;
   renderPreview();
 });
 
-$('grainVal').addEventListener('click', () => {
-  const img = activeImg();
-  if (!img) return;
-  commit();
-  img.grain = 0;
-  syncFramingUI();
-  renderPreview();
-});
-
 $('bgToggle').addEventListener('click', () => $('table').classList.toggle('light'));
+
+$('gridToggle').addEventListener('click', () => {
+  showGrid = !showGrid;
+  $('gridToggle').setAttribute('aria-pressed', showGrid);
+  redrawKeepsShare = true;              // guides are preview only, prepared exports stay valid
+  renderPreview();
+  redrawKeepsShare = false;
+});
 
 $('infoToggle').addEventListener('click', () => {
   const on = $('table').classList.toggle('show-info');
