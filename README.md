@@ -19,7 +19,7 @@ add clean borders to your photos for instagram, stories and tiktok. everything r
 - precision when you want it: hold a slider still and it zooms in for fine moves, or tap any value to type it exactly
 - grid guides: a rule of thirds overlay on the preview, never drawn into the export
 - apply to all: style one photo, copy its look to every other in one tap
-- collage: 2x1, 1x2, 3x1, 2x2 and side by side templates, place any photo in any cell, leave cells empty, reframe each cell on its own
+- collage: 2x1, 1x2, 3x1, 1x3, 2x2, side by side and photo over photo templates, place any photo in any cell, leave cells empty, reframe each cell on its own
 - border size and color are configurable, defaults to a small white border
 - film frames: generated scan style rebates from a hand curated seed set, no stored images, every photo gets its own
 - film grain, seeded per photo, speck size tracks resolution so every export looks the same

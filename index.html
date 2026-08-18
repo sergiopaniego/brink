@@ -245,6 +245,33 @@
   .format-row button[aria-pressed="true"] { color: var(--amber); border-color: rgba(224,164,88,0.5); }
   .format-note { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
 
+  /* template icons: the picker draws each layout instead of naming it */
+  #tplRow button { line-height: 0; }
+  .tpl-ico {
+    display: inline-grid;
+    gap: 2px;
+    width: 18px; height: 22px;   /* the 4:5 canvas in miniature */
+    vertical-align: middle;
+  }
+  .tpl-ico i { background: currentColor; border-radius: 1px; }
+  .i2h { grid-template-columns: 1fr 1fr; }
+  .i2v { grid-template-rows: 1fr 1fr; }
+  .i3h { grid-template-columns: repeat(3, 1fr); }
+  .i3v { grid-template-rows: repeat(3, 1fr); }
+  .i4g { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+  .i2f { display: inline-flex; align-items: center; justify-content: center; gap: 2px; }
+  .i2f i:first-child { width: 5px; height: 10px; }
+  .i2f i:last-child { width: 11px; height: 10px; }
+  .iov { position: relative; }
+  .iov i:first-child { position: absolute; inset: 0; }
+  .iov i:last-child {
+    position: absolute;
+    width: 9px; height: 9px;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    outline: 2px solid var(--panel);   /* lifts the inset off the base photo */
+  }
+
   .actions { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
   .btn {
     padding: 10px 12px;
@@ -615,12 +642,13 @@
     <section id="tplSection" data-tab="format" hidden>
       <div class="group-label">Template</div>
       <div class="format-row" id="tplRow">
-        <button data-tpl="2h" aria-pressed="true">2×1</button>
-        <button data-tpl="2v" aria-pressed="false">1×2</button>
-        <button data-tpl="3h" aria-pressed="false">3×1</button>
-        <button data-tpl="4g" aria-pressed="false">2×2</button>
-        <button data-tpl="2f" aria-pressed="false">side</button>
-        <button data-tpl="ov" aria-pressed="false">over</button>
+        <button data-tpl="2h" aria-pressed="true" aria-label="two side by side"><span class="tpl-ico i2h"><i></i><i></i></span></button>
+        <button data-tpl="2v" aria-pressed="false" aria-label="two stacked"><span class="tpl-ico i2v"><i></i><i></i></span></button>
+        <button data-tpl="3h" aria-pressed="false" aria-label="three side by side"><span class="tpl-ico i3h"><i></i><i></i><i></i></span></button>
+        <button data-tpl="3v" aria-pressed="false" aria-label="three stacked"><span class="tpl-ico i3v"><i></i><i></i><i></i></span></button>
+        <button data-tpl="4g" aria-pressed="false" aria-label="four in a grid"><span class="tpl-ico i4g"><i></i><i></i><i></i><i></i></span></button>
+        <button data-tpl="2f" aria-pressed="false" aria-label="side by side at natural size, no crop"><span class="tpl-ico i2f"><i></i><i></i></span></button>
+        <button data-tpl="ov" aria-pressed="false" aria-label="one photo floating over another"><span class="tpl-ico iov"><i></i><i></i></span></button>
       </div>
     </section>
 
@@ -1243,6 +1271,8 @@ const TEMPLATES = {
           return [[m, m, w, h], [m, 2 * m + h, w, h]]; } },
   '3h': { n: 3, rects: (W, H, m) => { const w = (W - 4 * m) / 3, h = H - 2 * m;
           return [[m, m, w, h], [2 * m + w, m, w, h], [3 * m + 2 * w, m, w, h]]; } },
+  '3v': { n: 3, rects: (W, H, m) => { const w = W - 2 * m, h = (H - 4 * m) / 3;
+          return [[m, m, w, h], [m, 2 * m + h, w, h], [m, 3 * m + 2 * h, w, h]]; } },
   '4g': { n: 4, rects: (W, H, m) => { const w = (W - 3 * m) / 2, h = (H - 3 * m) / 2;
           return [[m, m, w, h], [2 * m + w, m, w, h], [m, 2 * m + h, w, h], [2 * m + w, 2 * m + h, w, h]]; } },
   '2f': { n: 2, fitRow: true },   // side by side, natural aspect, centered, no crop

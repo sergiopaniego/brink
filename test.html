@@ -358,6 +358,39 @@ test('collage sizes the canvas so no photo upscales', async () => {
   }
 });
 
+test('the template picker draws layout icons with descriptive labels', async () => {
+  const { doc } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'));
+  doc.getElementById('wsCollage').click();
+  const buttons = doc.querySelectorAll('#tplRow button');
+  eq(buttons.length, 7, 'seven templates');
+  for (const b of buttons) {
+    ok(b.querySelector('.tpl-ico'), `${b.dataset.tpl} has an icon`);
+    ok((b.getAttribute('aria-label') || '').length > 3, `${b.dataset.tpl} labeled for screen readers`);
+    eq(b.textContent.trim(), '', `${b.dataset.tpl} has no cryptic text label`);
+  }
+  eq(doc.querySelectorAll('#tplRow .i4g i').length, 4, 'the four grid icon shows four cells');
+  eq(doc.querySelectorAll('#tplRow .i3v i').length, 3, 'the stacked icon shows three');
+});
+
+test('1x3 stacks three photos full width, none upscaled', async () => {
+  const { win, doc } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'), await photo(500, 500, 'c.jpg'));
+  doc.getElementById('wsCollage').click();
+  doc.querySelector('#tplRow button[data-tpl="3v"]').click();
+  const c = win.computeCollage();
+  close(c.W / c.H, 0.8, 0.002, 'canvas ratio');
+  eq(c.rects.length, 3, 'three cells');
+  const [r1, r2, r3] = c.rects;
+  eq(r1[2], c.W - 2 * c.m, 'rows span the full width');
+  eq(r1[3], r2[3], 'equal heights');
+  eq(r2[3], r3[3], 'all three');
+  close(r2[1], r1[1] + r1[3] + c.m, 1, 'stacked with one border between');
+  c.imgs.forEach((img, i) => {
+    if (!img) return;
+    const [, , w, h] = c.rects[i];
+    ok(Math.max(w / img.bitmap.width, h / img.bitmap.height) <= 1.001, `slot ${i} not upscaled`);
+  });
+});
+
 test('a 2x2 grid works with 2 photos, empty cells stay empty', async () => {
   const { win, doc, B } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'));
   doc.getElementById('wsCollage').click();
