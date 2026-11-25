@@ -244,6 +244,7 @@
   }
   .format-row button[aria-pressed="true"] { color: var(--amber); border-color: rgba(224,164,88,0.5); }
   .format-note { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+  .group-label.sub { margin-top: 16px; }
 
   /* template icons: the picker draws each layout instead of naming it */
   #tplRow button { line-height: 0; }
@@ -370,6 +371,96 @@
   body.has-images #gridToggle { display: block; }
   #gridToggle[aria-pressed="true"] { color: var(--amber); border-color: rgba(224,164,88,0.5); }
   #gridToggle:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+  #carToggle {
+    position: absolute;
+    top: 12px; right: 104px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 1px solid var(--panel-edge);
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0;
+    line-height: 0;
+    display: none;
+  }
+  #carToggle .tpl-ico { width: 12px; height: 9px; gap: 1.5px; }
+  body.has-images.ws-singles #carToggle { display: block; }
+  #carToggle:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+  /* ---------- carousel preview: the post as it will swipe on instagram ---------- */
+  #carousel {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    background: var(--ink);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: calc(10px + env(safe-area-inset-top)) 0 calc(14px + env(safe-area-inset-bottom));
+    gap: 10px;
+  }
+  #carousel[hidden] { display: none; }
+  .car-top {
+    width: 100%;
+    max-width: 560px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    font: 12px var(--mono);
+    color: var(--muted);
+  }
+  #carClose {
+    width: 40px; height: 40px;        /* thumb sized, top corner like every phone sheet */
+    border-radius: 50%;
+    border: 1px solid var(--panel-edge);
+    background: none;
+    color: var(--paper);
+    font: 20px/1 var(--sans);
+    cursor: pointer;
+  }
+  #carClose:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+  #carTrack {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+    flex: none;
+    max-width: 100%;
+  }
+  #carTrack::-webkit-scrollbar { display: none; }
+  .car-slide {
+    flex: 0 0 100%;
+    scroll-snap-align: center;
+    scroll-snap-stop: always;          /* one slide per swipe, like the real thing */
+    overflow: hidden;
+    position: relative;
+    background: #000;
+  }
+  .car-slide canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
+  #carDots { display: flex; gap: 5px; flex-wrap: wrap; justify-content: center; padding: 0 16px; }
+  #carDots i { width: 6px; height: 6px; border-radius: 50%; background: var(--panel-edge); }
+  #carDots i.on { background: var(--amber); }
+  #carNote {
+    max-width: 520px;
+    margin: 0 16px;
+    font-size: 12px;
+    color: var(--amber);
+    text-align: center;
+  }
+  .car-cover { display: flex; align-items: center; gap: 12px; padding: 0 16px; margin-top: auto; }
+  .car-cover .group-label { margin: 0; }
+  #carGrid {
+    width: 54px;
+    aspect-ratio: 3 / 4;               /* profile grid tile */
+    overflow: hidden;
+    border-radius: 2px;
+    background: #000;
+  }
+  #carGrid canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
+
   .table.light { background: #fafafa; }
   .table.light .readout { color: #96661c; }
   .table.light .readout .dim2 { color: #85857f; }
@@ -521,6 +612,8 @@
     #infoToggle { font-size: 15px; right: 52px; }
     #bgToggle { right: 12px; }
     #gridToggle { font-size: 14px; right: 92px; }
+    #carToggle { width: 32px; height: 32px; right: 132px; }
+    #carToggle .tpl-ico { width: 16px; height: 12px; gap: 2px; }
     aside > [data-tab] { display: none; }
     aside[data-tool="format"] > [data-tab="format"],
     aside[data-tool="border"] > [data-tab="border"],
@@ -726,7 +819,12 @@
     </section>
 
     <section data-tab="grain">
-      <div class="group-label">Grain</div>
+      <div class="group-label">Tone</div>
+      <div class="format-row" id="toneRow">
+        <button data-tone="color" aria-pressed="true">color</button>
+        <button data-tone="bw" aria-pressed="false">b&amp;w</button>
+      </div>
+      <div class="group-label sub">Grain</div>
       <div class="slider-row">
         <input type="range" id="grain" min="0" max="100" step="5" value="0" aria-label="Film grain amount">
         <span class="slider-val" id="grainVal">off</span>
@@ -772,6 +870,7 @@
     <button id="infoToggle" aria-label="output size details" aria-pressed="false">i</button>
     <button id="bgToggle" aria-label="preview on a light background"></button>
     <button id="gridToggle" aria-label="grid guides" aria-pressed="false">#</button>
+    <button id="carToggle" aria-label="preview the carousel"><span class="tpl-ico i2h"><i></i><i></i></span></button>
     <div class="chips">
       <div class="readout" id="readout"></div>
       <p id="creditChip">made by <a href="https://github.com/sergiopaniego" rel="noopener">sergio paniego</a>, <a href="https://github.com/sergiopaniego/brink" rel="noopener">source</a></p>
@@ -791,6 +890,20 @@
 
 <footer id="strip"></footer>
 
+<div id="carousel" role="dialog" aria-modal="true" aria-label="carousel preview" hidden>
+  <div class="car-top">
+    <span id="carCount"></span>
+    <button id="carClose" aria-label="close the preview">×</button>
+  </div>
+  <div id="carTrack"></div>
+  <div id="carDots"></div>
+  <p id="carNote" hidden></p>
+  <div class="car-cover">
+    <div id="carGrid"></div>
+    <div class="group-label">cover in your profile grid</div>
+  </div>
+</div>
+
 <nav id="toolbar" aria-label="Tools">
   <div id="toolsWrap">
   <div id="tools">
@@ -799,7 +912,7 @@
     <button data-tool="frame" aria-pressed="false">position</button>
     <button data-tool="color" aria-pressed="false">color</button>
     <button data-tool="film" aria-pressed="false">film</button>
-    <button data-tool="grain" aria-pressed="false">grain</button>
+    <button data-tool="grain" aria-pressed="false">tone</button>
     <button data-tool="mat" aria-pressed="false">mat</button>
     <button data-tool="split" aria-pressed="false">split</button>
   </div>
@@ -1056,6 +1169,21 @@ function drawGrain(ctx, img, x, y, w, h) {
   ctx.restore();
 }
 
+/* ---------- black and white ----------
+   a neutral fill in saturation blend mode keeps each pixel's luminance and
+   drops its color. no pixel readback: cheap at any size, safe on ios. */
+function drawTone(ctx, img, x, y, w, h) {
+  if (!img.bw) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  ctx.globalCompositeOperation = 'saturation';
+  ctx.fillStyle = '#808080';
+  ctx.fillRect(x, y, w, h);
+  ctx.restore();
+}
+
 // draws the frame around the photo window of layout l; ctx is already scaled
 function drawFilmFrame(ctx, l, label, scale) {
   const warm = label >= 1000;                   // warm curation round labels
@@ -1256,6 +1384,7 @@ function drawComposition(ctx, img, l, scale) {
   } else {
     ctx.drawImage(img.bitmap, l.sx, l.sy, l.sw, l.sh, l.x, l.y, l.dw, l.dh);
   }
+  drawTone(ctx, img, l.x, l.y, l.dw, l.dh);
   drawGrain(ctx, img, l.x, l.y, l.dw, l.dh);
   if (state.frame === 'film') drawFilmFrame(ctx, l, BLESSED_FRAMES[img.frameIdx], scale);
   ctx.restore();
@@ -1375,6 +1504,7 @@ function drawCollagePhotos(ctx, c) {
     } else {
       ctx.drawImage(img.bitmap, l.sx, l.sy, l.sw, l.sh, rx, ry, rw, rh);
     }
+    drawTone(ctx, img, rx, ry, rw, rh);
     drawGrain(ctx, img, rx, ry, rw, rh);
   });
 }
@@ -1498,7 +1628,7 @@ function renderSinglePreview() {
              : l.trimH > 0 ? `, trims ${l.trimH} px height` : '';
   const zoom = l.z > 1 ? `, zoom x${l.z.toFixed(2)}` : '';
   const rot = l.rot ? `, rot ${+l.rot.toFixed(1)}°` : '';
-  const grain = img.grain ? `, grain ${img.grain}%` : '';
+  const grain = (img.bw ? ', b&w' : '') + (img.grain ? `, grain ${img.grain}%` : '');
   const mat = state.mat && state.frame !== 'film' ? `, mat ${state.mat}%` : '';
   const resampled = l.z > 1 || l.rot ? ' (resampled)' : '';
   const head = l.split > 1
@@ -1686,8 +1816,126 @@ $('applyAll').addEventListener('click', () => {
     if (img === cur) continue;
     img.set = { ...cur.set };
     img.grain = cur.grain;
+    img.bw = cur.bw;
   }
   notice('applied to all photos');
+});
+
+/* ---------- carousel preview ----------
+   every photo with its own settings, split photos as their panels, in strip
+   order. instagram shows every slide at the first slide's ratio and crops
+   the rest, so the preview does the same and says which ones it cropped. */
+function withSettings(img, fn) {
+  const cur = state.images[state.current];
+  storeSettings(cur);
+  if (img === cur) return fn();
+  const backup = {};
+  for (const k of PER_IMG) backup[k] = state[k];
+  loadSettings(img);
+  try { return fn(); } finally { for (const k of PER_IMG) state[k] = backup[k]; }
+}
+
+function carouselPanels(maxSide) {
+  const panels = [];
+  state.images.forEach((img, i) => withSettings(img, () => {
+    const l = layoutFor(img);
+    const n = l.split > 1 ? l.split : 1;
+    const pw = l.cw / n;
+    const scale = Math.min(1, maxSide / Math.max(pw, l.ch));
+    for (let k = 0; k < n; k++) {
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(pw * scale));
+      c.height = Math.max(1, Math.round(l.ch * scale));
+      const ctx = ctx2d(c);
+      ctx.translate(-k * pw * scale, 0);
+      drawComposition(ctx, img, l, scale);
+      panels.push({ canvas: c, ratio: pw / l.ch, photo: i + 1 });
+    }
+  }));
+  return panels;
+}
+
+const ratioName = (r) => {
+  for (const m of Object.values(MODES)) if (m.ratio && Math.abs(m.ratio - r) < 0.01) return m.suffix.replace('x', ':');
+  return r >= 1 ? `${r.toFixed(2)}:1` : `1:${(1 / r).toFixed(2)}`;
+};
+
+function sizeCarousel() {
+  const track = $('carTrack');
+  const r = +track.dataset.ratio || 4 / 5;
+  const room = innerHeight - $('carousel').querySelector('.car-top').offsetHeight - 150;
+  const w = Math.max(120, Math.min(innerWidth, 560, room * r));
+  track.style.width = `${Math.round(w)}px`;
+  track.style.height = `${Math.round(w / r)}px`;
+}
+
+function updateCarouselCount() {
+  const track = $('carTrack');
+  const n = track.children.length;
+  const i = clamp(Math.round(track.scrollLeft / Math.max(1, track.clientWidth)), 0, n - 1);
+  $('carCount').textContent = `${i + 1} / ${n}`;
+  [...$('carDots').children].forEach((d, k) => d.classList.toggle('on', k === i));
+}
+
+function openCarousel() {
+  if (!state.images.length) return;
+  const panels = carouselPanels(1080 * Math.min(2, devicePixelRatio || 1));
+  const first = panels[0].ratio;
+  const track = $('carTrack');
+  track.innerHTML = '';
+  $('carDots').innerHTML = '';
+  track.dataset.ratio = first;
+  for (const p of panels) {
+    const slide = document.createElement('div');
+    slide.className = 'car-slide';
+    slide.append(p.canvas);
+    track.append(slide);
+    $('carDots').append(document.createElement('i'));
+  }
+  const odd = [...new Set(panels.filter((p) => Math.abs(p.ratio - first) > 0.01).map((p) => p.photo))];
+  $('carNote').hidden = !odd.length;
+  $('carNote').textContent = odd.length
+    ? `instagram crops every slide to the first one's ${ratioName(first)}: photo${odd.length > 1 ? 's' : ''} ${odd.join(', ')} will be cropped`
+    : '';
+  if (panels.length > MAX_PHOTOS) {
+    $('carNote').hidden = false;
+    $('carNote').textContent = `${panels.length} slides, instagram takes ${MAX_PHOTOS} at most`;
+  }
+  const cover = document.createElement('canvas');
+  cover.width = panels[0].canvas.width;
+  cover.height = panels[0].canvas.height;
+  cover.getContext('2d').drawImage(panels[0].canvas, 0, 0);
+  $('carGrid').innerHTML = '';
+  $('carGrid').append(cover);
+  $('carousel').hidden = false;
+  sizeCarousel();
+  track.scrollLeft = 0;
+  updateCarouselCount();
+  $('carClose').focus();
+}
+
+function closeCarousel() {
+  $('carousel').hidden = true;
+  $('carTrack').innerHTML = '';                    // let the canvases go
+  $('carGrid').innerHTML = '';
+  $('carToggle').focus();
+}
+
+$('carToggle').addEventListener('click', openCarousel);
+$('carClose').addEventListener('click', closeCarousel);
+$('carTrack').addEventListener('scroll', updateCarouselCount, { passive: true });
+$('carTrack').addEventListener('click', (e) => {   // tap a side to step, handy with a mouse
+  const track = $('carTrack');
+  const r = track.getBoundingClientRect();
+  track.scrollBy({ left: e.clientX - r.left > r.width / 2 ? track.clientWidth : -track.clientWidth });
+});
+addEventListener('resize', () => { if (!$('carousel').hidden) sizeCarousel(); });
+document.addEventListener('keydown', (e) => {
+  if ($('carousel').hidden) return;
+  const track = $('carTrack');
+  if (e.key === 'Escape') closeCarousel();
+  if (e.key === 'ArrowRight') track.scrollBy({ left: track.clientWidth });
+  if (e.key === 'ArrowLeft') track.scrollBy({ left: -track.clientWidth });
 });
 
 /* ---------- loading ---------- */
@@ -1714,6 +1962,7 @@ async function addFiles(fileList) {
       const im = { bitmap, id: ++imgSeq, name: file.name, thumbUrl: URL.createObjectURL(file),
                    frameIdx: hashSeed(file.name, file.size) % BLESSED_FRAMES.length,
                    grain: 0,
+                   bw: false,
                    adj: { zoom: 1, dx: 0, dy: 0, rot: 0 },
                    cadj: { zoom: 1, dx: 0, dy: 0, rot: 0 } };
       storeSettings(im);
@@ -1898,7 +2147,7 @@ function serialize() {
   return JSON.stringify({
     s: { workspace: state.workspace, template: state.template, slot: state.slot, format: state.format },
     order: state.images.map((im) => im.id),
-    imgs: state.images.map((im) => ({ adj: { ...im.adj }, cadj: { ...im.cadj }, grain: im.grain, frameIdx: im.frameIdx, set: { ...im.set } })),
+    imgs: state.images.map((im) => ({ adj: { ...im.adj }, cadj: { ...im.cadj }, grain: im.grain, bw: im.bw, frameIdx: im.frameIdx, set: { ...im.set } })),
     map: state.slotMap.map((sl) => (sl ? sl.id : -1)),
     current: state.current,
   });
@@ -1914,6 +2163,7 @@ function restore(json) {
     Object.assign(im.adj, pr.adj);
     Object.assign(im.cadj, pr.cadj);
     im.grain = pr.grain;
+    im.bw = !!pr.bw;
     im.frameIdx = pr.frameIdx;
     im.set = { ...pr.set };
   });
@@ -2034,6 +2284,7 @@ setTool('none');
 /* ---------- workspace ---------- */
 function updateControlStates() {
   const single = state.workspace === 'singles';
+  document.body.classList.toggle('ws-singles', single);
   $('fitRow').hidden = !single;
   $('modeOriginal').hidden = !single;
   $('tplSection').hidden = single;
@@ -2162,6 +2413,9 @@ function syncFramingUI() {
   const g = activeImg()?.grain ?? 0;
   $('grain').value = g;
   $('grainVal').textContent = g ? `${g}%` : 'off';
+  const bw = !!activeImg()?.bw;
+  document.querySelectorAll('#toneRow button').forEach((b) =>
+    b.setAttribute('aria-pressed', (b.dataset.tone === 'bw') === bw));
 }
 
 $('zoom').addEventListener('input', (e) => {
@@ -2471,6 +2725,19 @@ $('grain').addEventListener('input', (e) => {
   $('grainVal').textContent = img.grain ? `${img.grain}%` : 'off';
   renderPreview();
 });
+
+// per photo like grain; in a collage it follows the selected cell
+document.querySelectorAll('#toneRow button').forEach((b) =>
+  b.addEventListener('click', () => {
+    const img = activeImg();
+    if (!img) return;
+    const bw = b.dataset.tone === 'bw';
+    if (!!img.bw === bw) return;
+    commit();
+    img.bw = bw;
+    syncFramingUI();
+    renderPreview();
+  }));
 
 $('mat').addEventListener('input', (e) => {
   commit('mat');

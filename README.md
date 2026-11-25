@@ -23,6 +23,8 @@ add clean borders to your photos for instagram, stories and tiktok. everything r
 - border size and color are configurable, defaults to a small white border
 - film frames: generated scan style rebates from a hand curated seed set, no stored images, every photo gets its own
 - film grain, seeded per photo, speck size tracks resolution so every export looks the same
+- black and white per photo, next to grain under tone, luminance kept, the border untouched
+- carousel preview: swipe the whole post the way instagram will show it, warns when a slide gets cropped to the first one's ratio, shows the cover as a profile grid tile
 - batch: load several photos, remove any, tweak once, save all with filenames numbered in strip order
 - exports jpeg (quality 97) or png, output size always visible
 - on your phone the share sheet saves straight to the photo library

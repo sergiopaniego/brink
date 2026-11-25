@@ -874,10 +874,13 @@ test('the info chip sits below undo and redo, wraps instead of truncating', asyn
 
 test('each mobile tool panel names itself', async () => {
   const { doc } = await freshAppAt(430, await photo(400, 600, 'a.jpg'));
-  doc.querySelector('#tools button[data-tool="grain"]').click();
-  const label = doc.querySelector('aside [data-tab="grain"] .group-label');
-  ok(label && label.offsetParent !== null, 'grain panel shows its label');
-  ok(/grain/i.test(label.textContent), 'and it says grain');
+  const btn = doc.querySelector('#tools button[data-tool="grain"]');
+  eq(btn.textContent, 'tone', 'the tool is called tone');
+  btn.click();
+  const labels = [...doc.querySelectorAll('aside [data-tab="grain"] .group-label')];
+  ok(labels.length && labels[0].offsetParent !== null, 'tone panel shows its label');
+  ok(/tone/i.test(labels[0].textContent), 'and it says tone');
+  ok(labels.some((l) => /grain/i.test(l.textContent)), 'grain keeps its own label inside');
 });
 
 test('every format pill is visible on mobile without scrolling', async () => {
@@ -995,6 +998,102 @@ test('preview background toggles between dark and light', async () => {
   ok(table.classList.contains('light'), 'light background on');
   doc.getElementById('bgToggle').click();
   ok(!table.classList.contains('light'), 'back to dark');
+});
+
+/* ---------- black and white ---------- */
+
+async function pixels(win, blob) {
+  const bmp = await createImageBitmap(blob);
+  const c = document.createElement('canvas');
+  c.width = bmp.width; c.height = bmp.height;
+  const x = c.getContext('2d', { colorSpace: CS });
+  x.drawImage(bmp, 0, 0);
+  return (px, py) => [...x.getImageData(px, py, 1, 1).data.slice(0, 3)];
+}
+
+test('b&w is per photo, grays the photo and leaves the border alone', async () => {
+  const { win, doc, B } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(400, 600, 'b.jpg'));
+  B.state.format = 'png';
+  B.state.mode = 'original';
+  const [a, b] = B.state.images;
+  doc.querySelector('#toneRow [data-tone="bw"]').click();
+  ok(b.bw && !a.bw, 'only the selected photo turns b&w');
+  eq(doc.querySelector('#toneRow [data-tone="bw"]').getAttribute('aria-pressed'), 'true', 'button shows it');
+  const at = await pixels(win, await win.exportBlob(b));
+  const m = Math.round(0.02 * 600);
+  const top = at(m + 200, m + 50), bottom = at(m + 200, m + 500);
+  ok(Math.abs(top[0] - top[2]) <= 3 && Math.abs(top[1] - top[2]) <= 3, `orange band is gray: ${top}`);
+  ok(Math.abs(bottom[0] - bottom[2]) <= 3, `blue band is gray: ${bottom}`);
+  ok(top[0] !== bottom[0], 'luminance survives, the bands still differ');
+  const edge = at(3, 3);
+  ok(edge.every((v) => v === 255), 'border stays white');
+  const color = await pixels(win, await win.exportBlob(a));
+  const c0 = color(m + 200, m + 50);
+  ok(c0[0] - c0[2] > 40, 'the other photo keeps its color');
+});
+
+test('b&w undoes, applies to all and follows the collage cell', async () => {
+  const { doc, B } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'));
+  doc.querySelector('#toneRow [data-tone="bw"]').click();
+  ok(B.state.images[1].bw, 'on');
+  doc.getElementById('undoBtn').click();
+  ok(!B.state.images[1].bw, 'undo turns it off');
+  doc.querySelector('#toneRow [data-tone="bw"]').click();
+  doc.getElementById('applyAll').click();
+  ok(B.state.images.every((im) => im.bw), 'apply to all copies b&w');
+  doc.getElementById('wsCollage').click();
+  B.state.slot = 0;
+  doc.defaultView.syncFramingUI();
+  doc.querySelector('#toneRow [data-tone="color"]').click();
+  ok(!B.state.slotMap[0].bw && B.state.slotMap[1].bw, 'in a collage the selected cell changes alone');
+});
+
+/* ---------- carousel preview ---------- */
+
+test('the carousel preview shows every slide, split photos as panels', async () => {
+  const { doc: d0 } = await freshApp();
+  ok(d0.getElementById('carToggle').offsetParent === null, 'toggle hidden before photos');
+  const { doc, B } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(900, 300, 'b.jpg'));
+  B.state.split = 2;                               // the selected wide photo becomes two panels
+  doc.defaultView.storeSettings(B.state.images[1]);
+  const t = doc.getElementById('carToggle');
+  ok(t.offsetParent !== null, 'toggle visible with photos');
+  t.click();
+  const car = doc.getElementById('carousel');
+  ok(!car.hidden, 'opens');
+  eq(doc.querySelectorAll('#carTrack .car-slide').length, 3, 'one slide per photo plus the extra panel');
+  eq(doc.getElementById('carCount').textContent, '1 / 3', 'counter');
+  eq(doc.querySelectorAll('#carDots i').length, 3, 'one dot per slide');
+  ok(doc.querySelector('#carGrid canvas'), 'cover tile drawn for the profile grid');
+  ok(doc.getElementById('carNote').hidden, 'all 4:5, no crop warning');
+  doc.getElementById('carClose').click();
+  ok(car.hidden, 'closes');
+  eq(doc.querySelectorAll('#carTrack canvas').length, 0, 'canvases released');
+});
+
+test('the carousel warns when a slide is cropped to the first ratio', async () => {
+  const { doc, B } = await freshApp(await photo(400, 600, 'a.jpg'), await photo(400, 600, 'b.jpg'));
+  B.state.mode = 'square';                         // the selected (second) photo goes 1:1
+  doc.getElementById('carToggle').click();
+  const note = doc.getElementById('carNote');
+  ok(!note.hidden, 'warning shown');
+  ok(/4:5/.test(note.textContent) && /photo 2/.test(note.textContent), `names the ratio and the photo: ${note.textContent}`);
+  doc.defaultView.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+  doc.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  ok(doc.getElementById('carousel').hidden, 'escape closes');
+});
+
+test('the carousel fits a phone screen and hides in collage', async () => {
+  const { doc } = await freshAppAt(390, await photo(400, 600, 'a.jpg'), await photo(600, 400, 'b.jpg'));
+  doc.getElementById('carToggle').click();
+  const r = doc.getElementById('carTrack').getBoundingClientRect();
+  ok(r.width <= 390 && r.right <= 391, `track fits the width: ${r.width}`);
+  ok(r.bottom <= doc.defaultView.innerHeight, 'and the height');
+  const close = doc.getElementById('carClose').getBoundingClientRect();
+  ok(close.width >= 40 && close.height >= 40, 'close is finger sized');
+  doc.getElementById('carClose').click();
+  doc.getElementById('wsCollage').click();
+  ok(doc.getElementById('carToggle').offsetParent === null, 'no carousel toggle in collage');
 });
 
 /* ---------- run ---------- */
