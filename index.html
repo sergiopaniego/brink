@@ -1669,7 +1669,8 @@ $('downloadAll').addEventListener('click', () => {
     const files = [];
     for (let i = 0; i < state.images.length; i++) {
       btn.textContent = `preparing ${i + 1} of ${state.images.length}`;
-      files.push(...await exportFiles(state.images[i]));
+      const n = String(i + 1).padStart(2, '0');   // filenames sort in strip order, ready to upload
+      files.push(...(await exportFiles(state.images[i])).map((f) => new File([f], `${n}-${f.name}`, { type: f.type })));
     }
     return files;
   });

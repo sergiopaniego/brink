@@ -337,7 +337,8 @@ test('save buttons trigger the right downloads', async () => {
   await until(() => doc.getElementById('readout').textContent.includes('saved b-4x5.jpg'), 3000, 'no confirmation after saving');
   doc.getElementById('downloadAll').click();
   await until(() => fired.length === 3, 15000, 'save all did not fire for every photo');
-  ok(fired.includes('a-4x5.jpg'), 'first photo saved');
+  ok(fired.includes('01-a-4x5.jpg'), 'first photo saved with its strip position');
+  ok(fired.includes('02-b-4x5.jpg'), 'second follows, filenames sort in carousel order');
   await until(() => doc.getElementById('readout').textContent.includes('saved 2 photos'), 3000, 'no confirmation after save all');
 });
 
